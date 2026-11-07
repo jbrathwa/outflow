@@ -163,20 +163,19 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	pods := fromSource("pod-inventory", "Pod inventory", "", "pod IPs cannot be mapped to workloads over time",
 		"enable Container Insights so KubePodInventory is collected")
 
+	// Required: K8s API plus at least one traffic source; when the CNI
+	// SNATs pod traffic the DNS checks are mandatory (set above). A source
+	// is available when ok or warn, so only fail trips Failed().
+	dnsAvail := available(plug.State) && available(coll.State)
+	if !snat && !available(fw.State) && !dnsAvail {
+		fw.Required, plug.Required, coll.Required = true, true, true
+	}
+
 	traffic := []Check{outbound, fw, plug, coll, pods}
 	if c.NodeLocalDNS {
 		traffic = append(traffic, Check{Name: "NodeLocal DNS", State: Fail, Detail: "workload attribution unavailable",
 			Why:     "NodeLocal DNS Cache hides which pod sent each query from CoreDNS logs",
 			Without: dnsWithout})
-	}
-
-	// Required: K8s API plus at least one traffic source, unless the CNI
-	// SNATs pod traffic, where DNS logs are mandatory (set above).
-	if !snat {
-		if fw.State != OK && (plug.State != OK || coll.State != OK) {
-			fw.Required, plug.Required, coll.Required = true, true, true
-			traffic[1], traffic[2], traffic[3] = fw, plug, coll
-		}
 	}
 
 	var loc []Check
@@ -216,11 +215,14 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 			{Name: "Access", Checks: []Check{{State: Info, Detail: "checked in live mode"}}},
 		},
 	}
-	r.Coverage = coverage(traffic, fw.State == OK, plug.State == OK && coll.State == OK)
+	r.Coverage = coverage(traffic, available(fw.State), dnsAvail, c.NodeLocalDNS)
 	return r
 }
 
-func coverage(traffic []Check, fwOK, dnsOK bool) Coverage {
+// available reports whether a source delivers data: ok, or warn (degraded).
+func available(s State) bool { return s == OK || s == Warn }
+
+func coverage(traffic []Check, fwOK, dnsOK, nodeLocal bool) Coverage {
 	cv := Coverage{Can: []string{"which workloads may reach the internet"}}
 	all := true
 	for _, c := range traffic {
@@ -242,14 +244,32 @@ func coverage(traffic []Check, fwOK, dnsOK bool) Coverage {
 	if dnsOK {
 		cv.Can = append(cv.Can, "which domains each workload looked up")
 	}
-	if fwOK && dnsOK {
+	if fwOK && dnsOK && !nodeLocal {
 		cv.Can = append(cv.Can, "which workload made each call")
 	}
-	if !dnsOK {
-		cv.Cannot = append(cv.Cannot, "which workload made each call → enable CoreDNS logs")
+	seen := map[string]bool{}
+	add := func(line string) {
+		if !seen[line] {
+			seen[line] = true
+			cv.Cannot = append(cv.Cannot, line)
+		}
 	}
-	if !fwOK {
-		cv.Cannot = append(cv.Cannot, "what actually left the cluster → enable firewall logs")
+	for _, c := range traffic {
+		if c.State == OK {
+			continue
+		}
+		switch c.Name {
+		case "Outbound path":
+			add("traffic that skips the firewall")
+		case "Firewall logs":
+			add("what actually left the cluster → enable firewall logs")
+		case "CoreDNS query logs", "Log collection":
+			add("which workload made each call → enable CoreDNS logs")
+		case "Pod inventory":
+			add("workloads for pods that no longer exist → enable Container Insights")
+		case "NodeLocal DNS":
+			add("which workload made each call → NodeLocal DNS hides the client pod")
+		}
 	}
 	return cv
 }

@@ -128,8 +128,14 @@ func TestDoctorNodeLocalDNS(t *testing.T) {
 	if c.State != Fail || c.Detail != "workload attribution unavailable" {
 		t.Errorf("nodelocal = %+v", c)
 	}
-	if r.Coverage.Level == Full {
-		t.Error("coverage should not be FULL")
+	if r.Coverage.Level != Partial {
+		t.Errorf("level = %s, want PARTIAL", r.Coverage.Level)
+	}
+	if strings.Contains(strings.Join(r.Coverage.Can, "\n"), "which workload made") {
+		t.Errorf("can must not claim attribution: %v", r.Coverage.Can)
+	}
+	if !strings.Contains(strings.Join(r.Coverage.Cannot, "\n"), "which workload made") {
+		t.Errorf("cannot = %v", r.Coverage.Cannot)
 	}
 }
 
@@ -184,5 +190,48 @@ func TestPrintColor(t *testing.T) {
 	Print(&buf, r, true)
 	if !strings.Contains(buf.String(), "\x1b[31m✖") {
 		t.Error("expected red fail glyph")
+	}
+}
+
+func setState(s *model.Snapshot, id, state string) {
+	for i := range s.Sources {
+		if s.Sources[i].ID == id {
+			s.Sources[i].State = state
+		}
+	}
+}
+
+func TestDoctorWarnSourcesAreAvailable(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Cluster.CNI = "azure"
+	setState(&s, "firewall-logs", "warn")
+	setState(&s, "coredns-log-plugin", "warn")
+	setState(&s, "coredns-logs-collected", "warn")
+	r := Run(s, db(t), demoCfg(t), true)
+	if r.Failed() || r.Coverage.Level != Partial {
+		t.Errorf("non-SNAT warn: failed=%v level=%s", r.Failed(), r.Coverage.Level)
+	}
+
+	s, _ = fixtures.Demo() // overlay
+	setState(&s, "coredns-log-plugin", "warn")
+	r = Run(s, db(t), demoCfg(t), true)
+	if r.Failed() || r.Coverage.Level != Partial {
+		t.Errorf("overlay warn: failed=%v level=%s", r.Failed(), r.Coverage.Level)
+	}
+}
+
+func TestDoctorPartialExplainsOutboundAndInventory(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Cluster.OutboundType = "loadBalancer"
+	r := Run(s, db(t), demoCfg(t), true)
+	if r.Coverage.Level != Partial || !strings.Contains(strings.Join(r.Coverage.Cannot, "\n"), "skips the firewall") {
+		t.Errorf("outbound: level=%s cannot=%v", r.Coverage.Level, r.Coverage.Cannot)
+	}
+
+	s, _ = fixtures.Demo()
+	setState(&s, "pod-inventory", "missing")
+	r = Run(s, db(t), demoCfg(t), true)
+	if r.Coverage.Level != Partial || !strings.Contains(strings.Join(r.Coverage.Cannot, "\n"), "pods that no longer exist") {
+		t.Errorf("inventory: level=%s cannot=%v", r.Coverage.Level, r.Coverage.Cannot)
 	}
 }
