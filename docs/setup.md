@@ -44,7 +44,7 @@ Container Insights data-collection settings), and the `ContainerLogV2` schema mu
 outflow filters both tables to this cluster's node names and aggregates in the query, so
 only counts leave the workspace, not raw log lines.
 
-On AKS outflow finds the workspace from the add-on configuration. Otherwise pass
+On AKS outflow finds the workspace from the add-on configuration, which needs Reader on the AKS resource (see [Roles](#roles)). Otherwise pass
 `--workspace <guid>` or set `sources:` in `outflow.yaml` (see the [usage guide](usage.md#residency-rule-outflowyaml)).
 
 ## Azure Firewall
@@ -64,7 +64,7 @@ tables are more reliable.
 The firewall often logs to a different workspace than the cluster (for example a hub
 workspace such as `law-hub-eus`). outflow never guesses the firewall workspace: set
 `sources.firewall_workspace` in `outflow.yaml`, or pass `--workspace` if one workspace holds
-everything. Without firewall logs, `outflow doctor` reports coverage as degraded.
+everything. Without firewall logs, coverage drops to PARTIAL or NONE depending on CoreDNS logs.
 
 ## Roles
 

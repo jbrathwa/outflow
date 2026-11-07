@@ -66,7 +66,7 @@ Cases that exit 1 on purpose, so a clean result never hides missing data:
 
 ## Permissions
 
-outflow needs get/list/watch only. For Kubernetes, apply [`deploy/clusterrole.yaml`](../deploy/clusterrole.yaml):
+outflow is read-only: get, list and watch, except `get` only on two ConfigMaps. For Kubernetes, apply [`deploy/clusterrole.yaml`](../deploy/clusterrole.yaml):
 
 | Resources | Why |
 |---|---|
@@ -74,7 +74,7 @@ outflow needs get/list/watch only. For Kubernetes, apply [`deploy/clusterrole.ya
 | replicasets, deployments, statefulsets, daemonsets, jobs, cronjobs | Resolve each pod to its owning workload |
 | networkpolicies | The egress rules outflow analyses |
 | Calico `networkpolicies`, `globalnetworkpolicies` (optional) | Detect Calico policies outflow cannot evaluate |
-| configmaps `coredns-custom`, `coredns` in kube-system (optional) | Check whether DNS query logging is on |
+| configmaps named `coredns-custom` and `coredns` (optional) | Check whether DNS query logging is on. The ClusterRole restricts ConfigMaps by name only, so it grants `get` on ConfigMaps with those names in any namespace. For a tighter grant, replace that rule with a Role in `kube-system` |
 
 For Azure: **Log Analytics Reader** on each workspace and **Reader** on the AKS resource.
 Commands to grant them are in [the setup guide](setup.md#roles).
@@ -163,8 +163,7 @@ match. Lower it (down to `1m`) on busy nodes to reduce ambiguity.
 
 ### Domains with several locations
 
-A domain can resolve to several IPs. If those locations disagree on the rule (some
-inside, some outside), the destination is `unknown` with the note "resolves to several
+A domain can resolve to several IPs. If those locations rate differently under the rule, the destination is `unknown` with the note "resolves to several
 locations", not guessed either way.
 
 How a location is known: `cloud range` (published Azure, AWS or GCP ranges with
@@ -189,7 +188,7 @@ so newer location data applies to old snapshots.
 
 A scheduled job that reads the cluster live and fails when the rule is broken. It signs
 in to Azure with OIDC (workload identity federation, no stored secret), gets a kubeconfig,
-and runs `outflow scan`. The identity needs the access in [Permissions](#permissions).
+and runs `outflow scan`. The identity needs the access in [Permissions](#permissions), plus permission to fetch cluster credentials for `aks-set-context` (for example the Azure Kubernetes Service Cluster User Role).
 
 ```yaml
 # .github/workflows/residency.yml
