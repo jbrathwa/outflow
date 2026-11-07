@@ -648,3 +648,15 @@ func TestDetailShowsPortAndDeny(t *testing.T) {
 		}
 	}
 }
+
+func TestHostNetworkDetailPointsToNodeRow(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, nil), 140, 40)
+	for _, w := range rep.Workloads {
+		c, _ := m.detailContent(w, 77)
+		has := strings.Contains(c, "hostNetwork traffic appears under the (node) row for its node")
+		if has != (w.ID == "monitoring/node-exporter") {
+			t.Errorf("%s: hostNetwork note shown=%v:\n%s", w.ID, has, c)
+		}
+	}
+}

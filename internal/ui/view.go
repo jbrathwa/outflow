@@ -355,6 +355,8 @@ func destGlyph(st styles, s analyze.Status) (string, lipgloss.Style) {
 	return "", st.Muted
 }
 
+const hostNetworkNote = "hostNetwork traffic appears under the (node) row for its node"
+
 // detailContent renders the detail pane and the line index of the destination cursor.
 func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) {
 	st := m.styles
@@ -366,6 +368,9 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 		out = append(out, st.Title.Render(fit(title, width, false)), " "+st.Muted.Render(fit(sub, width-1, false)))
 	}
 	out = append(out, "")
+	if w.HostNetwork {
+		out = append(out, " "+st.Note.Render(fit(hostNetworkNote, width-1, false)), "")
+	}
 	dests := m.sortedDests(w)
 	if len(dests) == 0 {
 		return strings.Join(append(out, " "+st.Muted.Render("no destinations observed")), "\n"), 0
