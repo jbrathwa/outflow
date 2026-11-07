@@ -172,8 +172,14 @@ func TestMutualExclusion(t *testing.T) {
 	if code, _, _ := run(t, "scan", "--demo", "--snapshot", p); code != 1 {
 		t.Errorf("demo+snapshot code=%d", code)
 	}
-	if code, _, _ := run(t, "scan", "--demo", "--demo-degraded"); code != 1 {
-		t.Errorf("demo+degraded code=%d", code)
+	if code, _, stderr := run(t, "scan", "--demo", "--demo-degraded"); code != 1 || !strings.Contains(stderr, "--demo and --demo-degraded are mutually exclusive") {
+		t.Errorf("demo+degraded code=%d stderr=%q", code, stderr)
+	}
+	if code, _, stderr := run(t, "scan", "--demo-degraded", "--snapshot", p); code != 1 || !strings.Contains(stderr, "--demo-degraded and --snapshot are mutually exclusive") {
+		t.Errorf("degraded+snapshot code=%d stderr=%q", code, stderr)
+	}
+	if code, _, stderr := run(t, "scan", "--demo", "--demo-degraded", "--snapshot", p); code != 1 || !strings.Contains(stderr, "--demo, --demo-degraded and --snapshot are mutually exclusive") {
+		t.Errorf("all three code=%d stderr=%q", code, stderr)
 	}
 	if code, _, _ := run(t, "scan", "--demo", "--demo-rule", "--config", p); code != 1 {
 		t.Errorf("demo-rule+config code=%d", code)

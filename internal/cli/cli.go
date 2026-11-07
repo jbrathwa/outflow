@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
@@ -177,15 +178,19 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 }
 
 func (c *common) loadSnapshot() (model.Snapshot, error) {
-	n := 0
-	for _, b := range []bool{c.demo, c.demoDegraded, c.snapshot != ""} {
-		if b {
-			n++
+	var set []string
+	for _, f := range []struct {
+		name string
+		on   bool
+	}{{"--demo", c.demo}, {"--demo-degraded", c.demoDegraded}, {"--snapshot", c.snapshot != ""}} {
+		if f.on {
+			set = append(set, f.name)
 		}
 	}
 	switch {
-	case n > 1:
-		return model.Snapshot{}, errors.New("--demo and --snapshot are mutually exclusive")
+	case len(set) > 1:
+		names := strings.Join(set[:len(set)-1], ", ") + " and " + set[len(set)-1]
+		return model.Snapshot{}, fmt.Errorf("%s are mutually exclusive", names)
 	case c.demo:
 		s, err := fixtures.Demo()
 		if err != nil {
