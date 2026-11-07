@@ -356,3 +356,14 @@ func TestDumpDemoWriteError(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 }
+
+func TestNoColorNeedsValue(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	if noColor() {
+		t.Error("empty NO_COLOR must not disable colour")
+	}
+	t.Setenv("NO_COLOR", "1")
+	if !noColor() {
+		t.Error("NO_COLOR=1 must disable colour")
+	}
+}

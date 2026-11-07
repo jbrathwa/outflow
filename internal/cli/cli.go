@@ -223,9 +223,12 @@ func (c *common) loadConfig() (config.Config, error) {
 	return config.LoadDefault(".")
 }
 
-// useColor enables ANSI only for a terminal stdout with NO_COLOR unset.
+// noColor reports whether NO_COLOR asks for no colour: set to a non-empty value (no-color.org).
+func noColor() bool { return os.Getenv("NO_COLOR") != "" }
+
+// useColor enables ANSI only for a terminal stdout unless NO_COLOR is set.
 func useColor(w io.Writer) bool {
-	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+	if noColor() {
 		return false
 	}
 	f, ok := w.(*os.File)
