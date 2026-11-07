@@ -606,3 +606,14 @@ func TestReselectGoneDropsDetailFocus(t *testing.T) {
 		t.Errorf("detail focus should drop when the workload is gone")
 	}
 }
+
+func TestEgressColumnShowsPorts(t *testing.T) {
+	for _, ruled := range []bool{true, false} {
+		v := tableSide(sized(New(demoReport(t, ruled), nil), 140, 40).View())
+		for _, want := range []string{"internet:443", "allowlist:443"} {
+			if !strings.Contains(v, want) {
+				t.Errorf("ruled=%v: table missing %q:\n%s", ruled, want, v)
+			}
+		}
+	}
+}

@@ -251,10 +251,10 @@ func widths(cols []col, avail int) []int {
 
 func (m Model) workloadCols() []col {
 	if m.report.RuleConfigured {
-		return []col{{"STATUS", 7, false}, {"WORKLOAD", 0, false}, {"EGRESS", 12, false},
+		return []col{{"STATUS", 7, false}, {"WORKLOAD", 0, false}, {"EGRESS", 13, false},
 			{"DEST", 4, true}, {"OUT", 3, true}, {"UNK", 3, true}}
 	}
-	return []col{{"LOCATIONS", 12, false}, {"WORKLOAD", 0, false}, {"EGRESS", 12, false}, {"DEST", 4, true}}
+	return []col{{"LOCATIONS", 12, false}, {"WORKLOAD", 0, false}, {"EGRESS", 13, false}, {"DEST", 4, true}}
 }
 
 func (m Model) tableView(g geometry) string {

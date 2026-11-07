@@ -80,7 +80,7 @@ func egressLine(w analyze.WorkloadResult) string {
 	return "egress: " + string(w.Egress.Mode)
 }
 
-// egressCell is the short EGRESS column text.
+// egressCell is the short EGRESS column text, with the port restriction (e.g. internet:443).
 func egressCell(w analyze.WorkloadResult) string {
 	switch {
 	case w.NodeLevel:
@@ -90,5 +90,5 @@ func egressCell(w analyze.WorkloadResult) string {
 	case w.HostNetwork:
 		return string(netpol.HostNetwork)
 	}
-	return string(w.Egress.Mode)
+	return w.Egress.String()
 }
