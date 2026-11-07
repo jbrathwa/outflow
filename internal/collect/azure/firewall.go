@@ -73,6 +73,27 @@ func fwLegacyKQL(w model.Window, ips []string) string {
 		"| summarize count = count() by SourceIp, Destination, DestinationPort, Protocol, Action, Rule, bin = bin(TimeGenerated, 1m), _ResourceId"
 }
 
+// fwProbeNodesKQL asks whether any firewall row came from this cluster's nodes, in the
+// tables detect found (resource-specific ones win over legacy, as in Events).
+func fwProbeNodesKQL(d fwDetect, ips []string) string {
+	in := "| where SourceIp in (" + kqlStrings(ips) + ")\n"
+	if !d.app && !d.net {
+		return "AzureDiagnostics\n" +
+			`| where Category in ("AzureFirewallApplicationRule","AzureFirewallNetworkRule")` + "\n" +
+			"| extend msg = tostring(msg_s)\n" +
+			`| parse msg with * " request from " SourceIp ":" *` + "\n" +
+			in + "| take 1\n| project SourceIp, _ResourceId"
+	}
+	var tables []string
+	if d.app {
+		tables = append(tables, "AZFWApplicationRule")
+	}
+	if d.net {
+		tables = append(tables, "AZFWNetworkRule")
+	}
+	return "union isfuzzy=true " + strings.Join(tables, ", ") + "\n" + in + "| take 1\n| project SourceIp, _ResourceId"
+}
+
 type fwDetect struct {
 	app, net, legacy bool
 	name             string
@@ -123,7 +144,8 @@ func (d fwDetect) kinds() string {
 	return strings.Join(k, ", ")
 }
 
-// Probe reports whether firewall logs are present and which kinds.
+// Probe reports whether firewall logs are present, which kinds, and whether any of them
+// came from this cluster's nodes in the last 24h.
 func (f *FirewallSource) Probe(ctx context.Context, sc collect.Scope) (string, model.SourceStatus) {
 	ws := f.workspace()
 	if ws == "" {
@@ -132,6 +154,17 @@ func (f *FirewallSource) Probe(ctx context.Context, sc collect.Scope) (string, m
 	d := f.detect(ctx, ws, sc.Window.End)
 	if d.st != nil {
 		return "", *d.st
+	}
+	if len(sc.NodeIPs) == 0 {
+		return d.name, model.SourceStatus{ID: model.SrcFirewall, State: "warn", Detail: noFirewallNodeIPs}
+	}
+	w := model.Window{Start: sc.Window.End.Add(-24 * time.Hour), End: sc.Window.End}
+	t, err := f.LA.Query(ctx, "fw-probe-nodes", ws, fwProbeNodesKQL(d, sc.NodeIPs), w)
+	if err != nil {
+		return "", tableFailure(model.SrcFirewall, ws, err, noFirewallTables)
+	}
+	if len(t.Rows) == 0 {
+		return d.name, model.SourceStatus{ID: model.SrcFirewall, State: "warn", Detail: "no firewall events from this cluster's nodes in the last 24h"}
 	}
 	if !d.app && !d.net {
 		return d.name, model.SourceStatus{ID: model.SrcFirewall, State: "warn", Detail: "legacy AzureDiagnostics tables (parsed best effort)"}

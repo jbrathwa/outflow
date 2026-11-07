@@ -130,6 +130,9 @@ func kindEnv(t *testing.T) {
 			rid := "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-hub/providers/Microsoft.Network/azureFirewalls/fw-hub-eus"
 			return lafake.Response{Columns: []string{"t", "_ResourceId"}, Rows: [][]any{{"app", rid}, {"net", rid}}}, 200
 		},
+		"fw-probe-nodes": func(lafake.Call) (lafake.Response, int) {
+			return lafake.Response{Columns: []string{"SourceIp", "_ResourceId"}, Rows: [][]any{{nodeIPs[ledger.Node], ""}}}, 200
+		},
 		"fw-app": func(lafake.Call) (lafake.Response, int) {
 			cols := []string{"SourceIp", "Fqdn", "DestinationPort", "Protocol", "Action", "Rule", "bin", "count", "_ResourceId"}
 			return lafake.Response{Columns: cols, Rows: [][]any{

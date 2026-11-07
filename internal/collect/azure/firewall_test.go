@@ -37,14 +37,20 @@ var (
 )
 
 func fwServer(t *testing.T, detect, app, net, legacy [][]any) *lafake.Server {
+	return fwServerProbe(t, detect, app, net, legacy, [][]any{{"10.224.0.4", fwRID}})
+}
+
+// fwServerProbe is fwServer with the rows the fw-probe-nodes query returns.
+func fwServerProbe(t *testing.T, detect, app, net, legacy, probe [][]any) *lafake.Server {
 	h := func(cols []string, rows [][]any) lafake.Handler {
 		return func(c lafake.Call) (lafake.Response, int) { return lafake.Response{Columns: cols, Rows: rows}, 200 }
 	}
 	return lafake.New(t, map[string]lafake.Handler{
-		"fw-detect": h(fwDetectCols, detect),
-		"fw-app":    h(fwAppCols, app),
-		"fw-net":    h(fwNetCols, net),
-		"fw-legacy": h(fwLegCols, legacy),
+		"fw-detect":      h(fwDetectCols, detect),
+		"fw-app":         h(fwAppCols, app),
+		"fw-net":         h(fwNetCols, net),
+		"fw-legacy":      h(fwLegCols, legacy),
+		"fw-probe-nodes": h([]string{"SourceIp", "_ResourceId"}, probe),
 	})
 }
 
@@ -225,5 +231,57 @@ func TestProbe(t *testing.T) {
 	_, st = fwSource(s.URL, "").Probe(context.Background(), fwScope())
 	if st.State != "missing" || st.Detail != "no workspace (set sources.firewall_workspace or --workspace)" {
 		t.Fatalf("%+v", st)
+	}
+}
+
+func probeCall(t *testing.T, s *lafake.Server) lafake.Call {
+	t.Helper()
+	for _, c := range s.Calls() {
+		if c.Name == "fw-probe-nodes" {
+			return c
+		}
+	}
+	t.Fatal("fw-probe-nodes not queried")
+	return lafake.Call{}
+}
+
+func TestProbeChecksThisClustersNodes(t *testing.T) {
+	s := fwServer(t, [][]any{{"app", fwRID}, {"net", fwRID}}, nil, nil, nil)
+	fwSource(s.URL, fwWS).Probe(context.Background(), fwScope())
+	c := probeCall(t, s)
+	if !c.Window.Start.Equal(fwEnd.Add(-24*time.Hour)) || !c.Window.End.Equal(fwEnd) ||
+		!strings.Contains(c.KQL, "AZFWApplicationRule") || !strings.Contains(c.KQL, "AZFWNetworkRule") ||
+		!strings.Contains(c.KQL, `SourceIp in ("10.224.0.4", "10.224.0.5")`) || !strings.Contains(c.KQL, "take 1") {
+		t.Fatalf("%+v", c)
+	}
+	// Legacy tables: the probe parses AzureDiagnostics.
+	s = fwServer(t, [][]any{{"legacy", fwRID}}, nil, nil, nil)
+	fwSource(s.URL, fwWS).Probe(context.Background(), fwScope())
+	if c := probeCall(t, s); !strings.Contains(c.KQL, "AzureDiagnostics") || strings.Contains(c.KQL, "AZFW") ||
+		!strings.Contains(c.KQL, `SourceIp in ("10.224.0.4", "10.224.0.5")`) {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestProbeNoEventsFromNodesWarns(t *testing.T) {
+	s := fwServerProbe(t, [][]any{{"app", fwRID}}, nil, nil, nil, nil)
+	_, st := fwSource(s.URL, fwWS).Probe(context.Background(), fwScope())
+	if st.State != "warn" || st.Detail != "no firewall events from this cluster's nodes in the last 24h" {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestProbeNoNodeIPsWarns(t *testing.T) {
+	s := fwServer(t, [][]any{{"app", fwRID}}, nil, nil, nil)
+	sc := fwScope()
+	sc.NodeIPs = nil
+	_, st := fwSource(s.URL, fwWS).Probe(context.Background(), sc)
+	if st.State != "warn" || st.Detail != "no node IPs to filter firewall logs on" {
+		t.Fatalf("%+v", st)
+	}
+	for _, c := range s.Calls() {
+		if c.Name == "fw-probe-nodes" {
+			t.Fatal("probe query without node IPs")
+		}
 	}
 }
