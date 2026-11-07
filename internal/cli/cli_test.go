@@ -294,6 +294,24 @@ func TestTUICalled(t *testing.T) {
 	}
 }
 
+func TestVersionString(t *testing.T) {
+	cases := []struct {
+		version, commit, date, module, want string
+	}{
+		{"dev", "", "", "", "outflow dev"},
+		{"dev", "", "", "(devel)", "outflow dev"},
+		{"dev", "", "", "v0.2.0", "outflow 0.2.0"},
+		{"0.1.0", "2b0a094", "2026-11-08", "", "outflow 0.1.0 (2b0a094, 2026-11-08)"},
+		{"0.1.0", "2b0a094", "", "", "outflow 0.1.0 (2b0a094)"},
+		{"v0.1.0", "", "", "", "outflow 0.1.0"},
+	}
+	for _, c := range cases {
+		if got := versionString(c.version, c.commit, c.date, c.module); got != c.want {
+			t.Errorf("versionString(%q,%q,%q,%q) = %q, want %q", c.version, c.commit, c.date, c.module, got, c.want)
+		}
+	}
+}
+
 func TestVersionAndHelp(t *testing.T) {
 	if _, out, _ := run(t, "version"); out != "outflow dev\n" {
 		t.Errorf("version = %q", out)

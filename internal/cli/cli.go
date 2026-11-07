@@ -84,7 +84,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	}
 	switch cmd {
 	case "version":
-		fmt.Fprintln(stdout, "outflow dev")
+		fmt.Fprintln(stdout, versionString(Version, Commit, Date, moduleVersion()))
 		return exitOK
 	case "help":
 		fmt.Fprint(stdout, usage)
