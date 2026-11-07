@@ -3,6 +3,8 @@ package azure_test
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -162,4 +164,53 @@ func TestClientTimeoutOutlastsServerWait(t *testing.T) {
 	if got := azure.NewLogAnalytics(azure.StaticToken("t")).Timeout; got != 3*time.Minute+30*time.Second {
 		t.Fatalf("timeout %v", got)
 	}
+}
+
+func TestQueryDebugErrorPathsHaveNoIDsOrIPs(t *testing.T) {
+	var buf bytes.Buffer
+	collect.SetDebug(&buf)
+	defer collect.SetDebug(nil)
+	const kql = "T | where SourceIp in (\"10.224.0.4\", \"192.0.2.10\")\n| take 1"
+
+	// 403 from the service.
+	s := lafake.New(t, map[string]lafake.Handler{"q": func(lafake.Call) (lafake.Response, int) {
+		return lafake.Response{ErrorCode: "InsufficientAccessError", ErrorMessage: "denied for 192.0.2.10"}, 403
+	}})
+	if _, err := client(s.URL).Query(context.Background(), "q", wsA, kql, win(1)); err == nil {
+		t.Fatal("want 403 error")
+	}
+	// Transport error: nothing listens on the endpoint any more.
+	dead := httptest.NewServer(http.NotFoundHandler())
+	deadURL := dead.URL
+	dead.Close()
+	if _, err := client(deadURL).Query(context.Background(), "q", wsA, kql, win(1)); err == nil {
+		t.Fatal("want transport error")
+	}
+	// ARM: a 403 and a transport error on a path holding the subscription GUID.
+	const sub = "00000000-0000-0000-0000-0000000000aa"
+	aks := "/subscriptions/" + sub + "/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks-prod-eus"
+	for _, ep := range []string{forbiddenARM(t), deadURL} {
+		e := &azure.Enricher{ARM: &azure.ARM{Endpoint: ep, Tokens: azure.StaticToken("tok-secret")}, AKSCluster: aks}
+		e.Enrich(context.Background(), &collect.ClusterState{})
+	}
+
+	out := buf.String()
+	for _, want := range []string{"query q workspace …000a error=403 InsufficientAccessError", "query q workspace …000a error=transport",
+		"arm GET status=403", "arm GET error=transport", "(<2 values>)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in %q", want, out)
+		}
+	}
+	for _, bad := range []string{wsA, sub, "10.224.0.4", "192.0.2.10", "127.0.0.1", "tok-secret", "denied for"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("leaked %q in %q", bad, out)
+		}
+	}
+}
+
+func forbiddenARM(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(403) }))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }
