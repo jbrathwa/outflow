@@ -164,7 +164,8 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 		"enable Container Insights so KubePodInventory is collected")
 
 	// Required: K8s API plus at least one traffic source; when the CNI
-	// SNATs pod traffic the DNS checks are mandatory (set above). A source
+	// SNATs pod traffic the DNS checks are mandatory (set above), and so is
+	// the absence of NodeLocal DNS (below). A source
 	// is available when ok or warn, so only fail trips Failed().
 	dnsAvail := available(plug.State) && available(coll.State)
 	if !snat && !available(fw.State) && !dnsAvail {
@@ -175,7 +176,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	if c.NodeLocalDNS {
 		traffic = append(traffic, Check{Name: "NodeLocal DNS", State: Fail, Detail: "workload attribution unavailable",
 			Why:     "NodeLocal DNS Cache hides which pod sent each query from CoreDNS logs",
-			Without: dnsWithout})
+			Without: dnsWithout, Required: snat})
 	}
 
 	var loc []Check

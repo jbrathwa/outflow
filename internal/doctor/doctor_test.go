@@ -139,6 +139,20 @@ func TestDoctorNodeLocalDNS(t *testing.T) {
 	}
 }
 
+func TestDoctorNodeLocalDNSRequiredWhenSNAT(t *testing.T) {
+	s, _ := fixtures.Demo() // azure-cni-overlay: pods leave with node IPs
+	s.Cluster.NodeLocalDNS = true
+	r := Run(s, db(t), demoCfg(t), true)
+	if !find(t, r, "NodeLocal DNS").Required || !r.Failed() {
+		t.Error("NodeLocal DNS on an overlay CNI hides attribution and must fail doctor")
+	}
+	s.Cluster.CNI = "azure"
+	r = Run(s, db(t), demoCfg(t), true)
+	if find(t, r, "NodeLocal DNS").Required || r.Failed() {
+		t.Error("NodeLocal DNS on a non-SNAT CNI only degrades coverage")
+	}
+}
+
 func TestDoctorPolicyEngine(t *testing.T) {
 	s, _ := fixtures.Demo()
 	s.Cluster.PolicyEngine = ""
