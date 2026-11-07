@@ -379,7 +379,7 @@ func TestDetailNotesFollowFocus(t *testing.T) {
 		all := m.View()
 		m = press(m, tea.KeyEnter)
 		focused := m.View()
-		d0 := w.Destinations[0]
+		d0 := New(rep, nil).sortedDests(w)[0]
 		for _, d := range w.Destinations {
 			for _, note := range destNotes(d) {
 				if !strings.Contains(all, note) {
@@ -400,12 +400,6 @@ func TestExceptionSnippet(t *testing.T) {
 	m := sized(New(rep, nil), 140, 40)
 	m = keys(m, "e")
 	v := m.View()
-	if !strings.Contains(v, "- domain: "+rep.Workloads[0].Destinations[0].Domain) {
-		t.Errorf("table focus should use the first destination:\n%s", v)
-	}
-	m = press(press(press(sized(New(rep, nil), 140, 40), tea.KeyEnter), tea.KeyDown), tea.KeyDown)
-	m = keys(m, "e")
-	v = m.View()
 	for _, want := range []string{"Add to outflow.yaml (copy by hand)", "residency:", "exceptions:", "- domain: stledgerweu.blob.core.windows.net", "workload: payments/ledger-worker", `reason: ""`} {
 		if !strings.Contains(v, want) {
 			t.Errorf("overlay missing %q:\n%s", want, v)
@@ -419,7 +413,7 @@ func TestExceptionSnippet(t *testing.T) {
 	}
 	// detail focus uses the selected destination
 	m = press(press(sized(New(rep, nil), 140, 40), tea.KeyEnter), tea.KeyDown)
-	want := rep.Workloads[0].Destinations[1]
+	want := New(rep, nil).sortedDests(rep.Workloads[0])[1]
 	v = keys(m, "e").View()
 	field := "domain: " + want.Domain
 	if want.Domain == "" {
@@ -530,5 +524,47 @@ func TestNoLineExceedsWidthInteractive(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestDestinationsWorstFirst(t *testing.T) {
+	rep := demoReport(t, true)
+	v := sized(New(rep, nil), 140, 40).View()
+	var got []string
+	for _, d := range []string{"stledgerweu", "login.microsoftonline", "api.github.com"} {
+		got = append(got, d)
+		if lineIndex(strings.Split(v, "\n"), d) < 0 {
+			t.Fatalf("missing %s:\n%s", d, v)
+		}
+	}
+	lines := strings.Split(v, "\n")
+	if !(lineIndex(lines, got[0]) < lineIndex(lines, got[1]) && lineIndex(lines, got[1]) < lineIndex(lines, got[2])) {
+		t.Errorf("want outside, unknown, inside order:\n%s", v)
+	}
+	if rep.Workloads[0].Destinations[0].Domain != "api.github.com" {
+		t.Errorf("report order must stay untouched")
+	}
+}
+
+func TestSortedDestsTieBreak(t *testing.T) {
+	mk := func(dom string, hits int, st analyze.Status) analyze.Destination {
+		return analyze.Destination{Observation: analyze.Observation{Domain: dom, Hits: hits}, Status: st}
+	}
+	w := analyze.WorkloadResult{Destinations: []analyze.Destination{
+		mk("b.in", 5, analyze.Inside), mk("d.den", 9, analyze.OutsideDenied), mk("a.in", 5, analyze.Inside),
+		mk("u", 1, analyze.Unknown), mk("o", 1, analyze.Outside), mk("c.in", 50, analyze.Inside),
+	}}
+	order := func(m Model) string {
+		var s []string
+		for _, d := range m.sortedDests(w) {
+			s = append(s, d.Domain)
+		}
+		return strings.Join(s, ",")
+	}
+	if got := order(New(analyze.Report{RuleConfigured: true}, nil)); got != "o,u,d.den,c.in,a.in,b.in" {
+		t.Errorf("ruled order = %s", got)
+	}
+	if got := order(New(analyze.Report{}, nil)); got != "c.in,d.den,a.in,b.in,o,u" {
+		t.Errorf("neutral order = %s", got)
 	}
 }

@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -219,14 +220,15 @@ func (m Model) selectedID() string {
 // focused, else the selected workload's first.
 func (m Model) selectedDest() (analyze.WorkloadResult, analyze.Destination, bool) {
 	w, ok := m.selected()
-	if !ok || len(w.Destinations) == 0 {
+	ds := m.sortedDests(w)
+	if !ok || len(ds) == 0 {
 		return w, analyze.Destination{}, false
 	}
 	i := 0
 	if m.detailFocus {
-		i = min(m.destCursor, len(w.Destinations)-1)
+		i = min(m.destCursor, len(ds)-1)
 	}
-	return w, w.Destinations[i], true
+	return w, ds[i], true
 }
 
 // reselect re-anchors the cursor on workload id after the row set changed; when the
@@ -300,4 +302,43 @@ func (m Model) exceptionSnippet() []string {
 		out = append(out, "      workload: "+w.ID)
 	}
 	return append(out, `      reason: ""`)
+}
+
+// sortedDests is the displayed destination order: worst status first when a rule is
+// set (outside, unknown, outside (denied), inside), then hits descending, then name.
+func (m Model) sortedDests(w analyze.WorkloadResult) []analyze.Destination {
+	ds := append([]analyze.Destination(nil), w.Destinations...)
+	rank := func(s analyze.Status) int {
+		if !m.report.RuleConfigured {
+			return 0
+		}
+		switch s {
+		case analyze.Outside:
+			return 0
+		case analyze.Unknown:
+			return 1
+		case analyze.OutsideDenied:
+			return 2
+		case analyze.Inside:
+			return 3
+		}
+		return 4
+	}
+	name := func(d analyze.Destination) string {
+		if d.Domain != "" {
+			return d.Domain
+		}
+		return d.IP
+	}
+	sort.SliceStable(ds, func(i, j int) bool {
+		a, b := ds[i], ds[j]
+		if ra, rb := rank(a.Status), rank(b.Status); ra != rb {
+			return ra < rb
+		}
+		if a.Hits != b.Hits {
+			return a.Hits > b.Hits
+		}
+		return name(a) < name(b)
+	})
+	return ds
 }

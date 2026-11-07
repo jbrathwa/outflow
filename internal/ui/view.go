@@ -366,7 +366,8 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 		out = append(out, st.Title.Render(fit(title, width, false)), " "+st.Muted.Render(fit(sub, width-1, false)))
 	}
 	out = append(out, "")
-	if len(w.Destinations) == 0 {
+	dests := m.sortedDests(w)
+	if len(dests) == 0 {
 		return strings.Join(append(out, " "+st.Muted.Render("no destinations observed")), "\n"), 0
 	}
 
@@ -383,7 +384,7 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 
 	var notes []string
 	cursorLine := 0
-	for di, d := range w.Destinations {
+	for di, d := range dests {
 		focused := m.detailFocus && di == m.destCursor
 		name := d.Domain
 		if name == "" {
