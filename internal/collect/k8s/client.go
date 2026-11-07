@@ -6,7 +6,6 @@ import (
 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -18,7 +17,6 @@ type Source struct {
 	cs      kubernetes.Interface
 	dyn     dynamic.Interface
 	context string
-	rest    *rest.Config
 }
 
 // New builds a Source from the standard kubeconfig loading rules. A non-empty kubeconfig is an
@@ -52,7 +50,7 @@ func New(kubeconfig, contextName string) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes dynamic client: %w", err)
 	}
-	return &Source{cs: cs, dyn: dyn, context: name, rest: cfg}, nil
+	return &Source{cs: cs, dyn: dyn, context: name}, nil
 }
 
 // NewFromClients builds a Source from existing clients (tests). dyn may be nil.

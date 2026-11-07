@@ -77,6 +77,7 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 					node.IPs = append(node.IPs, a.Address)
 				}
 			}
+			sort.Strings(node.IPs)
 			st.Nodes = append(st.Nodes, node)
 			if n.Spec.ProviderID != "" {
 				st.ProviderIDs = append(st.ProviderIDs, n.Spec.ProviderID)
@@ -100,10 +101,17 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 
 	// Controllers.
 	workloads := map[string]model.Workload{}
+	var collisions []string
 	addWL := func(ns, name, kind string, labels map[string]string, hostNet bool) {
 		w := model.Workload{Namespace: ns, Name: name, Kind: kind, Labels: labels, HostNetwork: hostNet}
 		if w.Labels == nil {
 			w.Labels = map[string]string{}
+		}
+		if prev, ok := workloads[w.ID()]; ok {
+			if prev.Kind != kind {
+				collisions = append(collisions, fmt.Sprintf("%s (%s, %s)", w.ID(), prev.Kind, kind))
+			}
+			return // first kind wins; kinds are listed in a fixed order
 		}
 		workloads[w.ID()] = w
 	}
@@ -208,24 +216,22 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 			if p.Status.PodIP == "" {
 				continue
 			}
-			wid := p.Namespace + "/" + p.Name
+			wid, kind := p.Namespace+"/"+p.Name, "Pod"
 			if c, ok := controllerOf(p.OwnerReferences); ok {
-				wid = p.Namespace + "/" + c.name
+				wid, kind = p.Namespace+"/"+c.name, c.kind
 				switch c.kind {
 				case "ReplicaSet":
 					if up, ok := rsOwner[p.Namespace+"/"+c.name]; ok {
-						wid = p.Namespace + "/" + up.name
+						wid, kind = p.Namespace+"/"+up.name, up.kind
 					}
 				case "Job":
 					if up, ok := jobOwner[p.Namespace+"/"+c.name]; ok {
-						wid = p.Namespace + "/" + up.name
+						wid, kind = p.Namespace+"/"+up.name, up.kind
 					}
 				}
 			}
 			if _, ok := workloads[wid]; !ok {
-				if _, controlled := controllerOf(p.OwnerReferences); !controlled {
-					addWL(p.Namespace, p.Name, "Pod", p.Labels, p.Spec.HostNetwork)
-				}
+				addWL(p.Namespace, wid[len(p.Namespace)+1:], kind, p.Labels, p.Spec.HostNetwork)
 			}
 			pod := model.Pod{Namespace: p.Namespace, Name: p.Name, WorkloadID: wid, Node: p.Spec.NodeName, IP: p.Status.PodIP}
 			if p.Status.StartTime != nil {
@@ -273,6 +279,11 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 	if len(warns) > 0 {
 		src.State = "warn"
 		src.Detail += "; incomplete: " + strings.Join(warns, ", ")
+	}
+	if len(collisions) > 0 {
+		sort.Strings(collisions)
+		src.State = "warn"
+		src.Detail += "; name collision: " + strings.Join(collisions, ", ")
 	}
 	st.Sources = []model.SourceStatus{src}
 	return st, nil

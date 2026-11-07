@@ -250,3 +250,53 @@ func TestReadForbiddenPodsFails(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 }
+
+func TestReadUnlistedControllerSynthesizesWorkload(t *testing.T) {
+	p1 := pod("shop", "api-abc-1", "10.0.0.1", ctrl("ReplicaSet", "api-abc"))
+	p1.Labels = map[string]string{"app": "api"}
+	p1.Spec.HostNetwork = true
+	p2 := pod("shop", "api-abc-2", "10.0.0.2", ctrl("ReplicaSet", "api-abc"))
+	p2.Labels = map[string]string{"app": "other"}
+	p3 := pod("shop", "gone-1", "10.0.0.3", ctrl("ReplicaSet", "gone-xyz"))
+	p3.Labels = map[string]string{"app": "gone"}
+	cs := fake.NewSimpleClientset(
+		&appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "api-abc", OwnerReferences: ctrl("Rollout", "api")}},
+		p1, p2, p3)
+	st, err := NewFromClients(cs, nil, "c").Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]model.Workload{}
+	for _, w := range st.Workloads {
+		got[w.ID()] = w
+	}
+	if w := got["shop/api"]; w.Kind != "Rollout" || w.Labels["app"] != "api" || !w.HostNetwork {
+		t.Fatalf("rollout: %+v", w)
+	}
+	if w := got["shop/gone-xyz"]; w.Kind != "ReplicaSet" || w.Labels["app"] != "gone" {
+		t.Fatalf("missing rs: %+v", w)
+	}
+	for _, p := range st.Pods {
+		if _, ok := got[p.WorkloadID]; !ok {
+			t.Fatalf("pod %s points at missing workload %s", p.Name, p.WorkloadID)
+		}
+	}
+}
+
+func TestReadNameCollisionWarns(t *testing.T) {
+	cs := fake.NewSimpleClientset(
+		&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "db"}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "db"}},
+	)
+	st, err := NewFromClients(cs, nil, "c").Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Workloads) != 1 || st.Workloads[0].Kind != "Deployment" {
+		t.Fatalf("workloads: %+v", st.Workloads)
+	}
+	s := st.Sources[0]
+	if s.State != "warn" || !strings.Contains(s.Detail, "name collision: a/db (Deployment, StatefulSet)") {
+		t.Fatalf("source: %+v", s)
+	}
+}
