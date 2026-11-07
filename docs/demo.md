@@ -2,8 +2,9 @@
 
 `outflow --demo` loads a built-in snapshot of a fictional cluster: AKS
 `aks-prod-eus` in `eastus`, Azure CNI Overlay, Calico, egress through Azure
-Firewall `fw-hub-eus`, logs in workspace `law-hub-eus`. Names and IPs are made
-up. Everything here is real output from the binary.
+Firewall `fw-hub-eus`, logs in workspace `law-hub-eus`. Names are fictional;
+destination IPs come from public provider ranges, so the location lookup has
+something real to match. Everything here is real output from the binary.
 
 ```sh
 outflow --demo --demo-rule     # TUI with the rule "allow US"
@@ -34,12 +35,12 @@ traffic.
 |---|---|---|---|
 | payments/ledger-worker | unrestricted | outside | `stledgerweu.blob.core.windows.net` is in Azure `westeurope` (NL) and traffic to it was confirmed. `login.microsoftonline.com` is a global service with no single location, so it is unknown. `api.github.com` is US but only looked up (`DNS only`) |
 | analytics/event-collector | internet | outside | `api.eu.segment.io` is AWS `eu-west-1` (IE) and confirmed. `api.segment.io` is US. A third destination, `telemetry.collector.example` (FR), was blocked by the firewall: it shows as `outside (denied)` and does not count. The workload is outside only because of the allowed EU destination |
-| (node) aks-np1-vmss0003 | node | outside | Firewall traffic with no matching DNS lookup: `51.15.22.140:123` (FR, GeoIP) and `packages.microsoft.com` (US). No workload can be named, so the row is the node |
+| (node) aks-np1-vmss0003 | node | outside | `51.15.22.140:123` (FR, GeoIP) is firewall traffic with no matching DNS lookup. `packages.microsoft.com` (Azure `eastus`, US) is node-exporter's `hostNetwork` lookup from the node IP, joined to firewall traffic at node level. No workload can be named for either, so the row is the node |
 | ml/model-fetch | unrestricted | unknown | `huggingface.co` is a CDN and `storage.googleapis.com` is global, so neither has a location. `models.fetch-hub.example` resolves to AWS `eu-west-1` but was only looked up (`DNS only`), so it counts as unknown, not outside |
-| shop/storefront | allowlist | inside | `stshopassets.blob.core.windows.net` is Azure `eastus`. A firewall deny to `api.segment.io` is shown but never counted |
-| payments/payment-api | internet | inside | `api.stripe.com` is covered by the exception and flagged as a SaaS domain; `hooks.slack.com` is US. `api.github.com` is `likely`, see below |
+| shop/storefront | allowlist:443 | inside | `stshopassets.blob.core.windows.net` is Azure `eastus`. A firewall deny to `api.segment.io` is shown but never counted |
+| payments/payment-api | internet:443 | inside | `api.stripe.com` is covered by the exception and flagged as a SaaS domain; `hooks.slack.com` is US. `api.github.com` is `likely`, see below |
 | flux-system/source-controller | unrestricted | inside | `github.com`, `ghcr.io` and `api.github.com` are all US |
-| monitoring/node-exporter | hostNetwork | no traffic | A `hostNetwork` pod is not covered by NetworkPolicy and looks up DNS from the node IP, so its traffic would appear in the node row |
+| monitoring/node-exporter | hostNetwork | no traffic | A `hostNetwork` pod is not covered by NetworkPolicy and looks up DNS from the node IP, so its traffic (`packages.microsoft.com`) appears under the `(node) aks-np1-vmss0003` row. The detail pane says so |
 | shop/cart | internal | no traffic | Its policy only allows in-cluster peers, and nothing external was seen |
 
 Header counts are `[3 outside] [4 unknown] [10 inside]` (destinations, with
@@ -54,10 +55,13 @@ instead of `confirmed`, and the detail pane for each names the other.
 
 ## Node-level rows
 
-The `(node) aks-np1-vmss0003` row holds firewall traffic that no DNS lookup
-explains, for example a hard-coded IP such as `51.15.22.140:123`. outflow
-refuses to assign it to a workload, because that would claim more than the
-evidence shows.
+The `(node) aks-np1-vmss0003` row holds traffic that only the node can be
+blamed for: firewall traffic that no DNS lookup explains, such as the
+hard-coded IP `51.15.22.140:123`, and lookups made from the node IP by
+`hostNetwork` pods, such as node-exporter's `packages.microsoft.com`. outflow
+refuses to assign either to a workload, because that would claim more than the
+evidence shows. A `hostNetwork` lookup with no matching firewall traffic would
+be `DNS only` on this row, so it counts as unknown, never outside.
 
 ## Neutral mode
 
@@ -66,13 +70,13 @@ destination with its location instead of a status:
 
 ```
 $ outflow scan --demo --format md
-| Status | Workload | Destination | Location | Evidence |
-|---|---|---|---|---|
-| IE (aws:eu-west-1) | analytics/event-collector | api.eu.segment.io (52.209.81.3):443 | IE (aws:eu-west-1) | confirmed |
-| US (aws:us-east-1) | analytics/event-collector | api.segment.io (54.145.112.20):443 | US (aws:us-east-1) | confirmed |
-| FR | analytics/event-collector | telemetry.collector.example (51.15.88.12):443 | FR | confirmed |
-| US | payments/payment-api | api.github.com (140.82.112.5):443 | US | likely |
-| US (aws:us-east-1) | payments/payment-api | api.stripe.com (3.218.180.12):443 | US (aws:us-east-1) | confirmed |
+| Locations | Workload | Destination | Location | Evidence | Action |
+|---|---|---|---|---|---|
+| IE (aws:eu-west-1) | analytics/event-collector | api.eu.segment.io (52.209.81.3):443 | IE (aws:eu-west-1) | confirmed | allow |
+| US (aws:us-east-1) | analytics/event-collector | api.segment.io (54.145.112.20):443 | US (aws:us-east-1) | confirmed | allow |
+| FR | analytics/event-collector | telemetry.collector.example (51.15.88.12):443 | FR | confirmed | deny |
+| US (aws:us-east-1) | payments/payment-api | api.stripe.com (3.218.180.12):443 | US (aws:us-east-1) | confirmed | allow |
+| US (aws:us-east-1) | payments/payment-api | hooks.slack.com (3.211.44.9):443 | US (aws:us-east-1) | confirmed | allow |
 ...
 ```
 
