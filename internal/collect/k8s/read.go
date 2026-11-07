@@ -64,7 +64,6 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 	}
 
 	// Nodes.
-	podCIDRs := map[string]bool{}
 	var rawNodes []corev1.Node
 	err := listAll(func(o metav1.ListOptions) (string, error) {
 		l, err := s.cs.CoreV1().Nodes().List(ctx, o)
@@ -72,34 +71,12 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 			return "", err
 		}
 		rawNodes = append(rawNodes, l.Items...)
-		for _, n := range l.Items {
-			node := model.Node{Name: n.Name, IPs: []string{}}
-			for _, a := range n.Status.Addresses {
-				if a.Type == corev1.NodeInternalIP {
-					node.IPs = append(node.IPs, a.Address)
-				}
-			}
-			sort.Strings(node.IPs)
-			st.Nodes = append(st.Nodes, node)
-			if n.Spec.ProviderID != "" {
-				st.ProviderIDs = append(st.ProviderIDs, n.Spec.ProviderID)
-			}
-			for _, c := range n.Spec.PodCIDRs {
-				podCIDRs[c] = true
-			}
-			if len(n.Spec.PodCIDRs) == 0 && n.Spec.PodCIDR != "" {
-				podCIDRs[n.Spec.PodCIDR] = true
-			}
-		}
 		return l.Continue, nil
 	})
 	if err != nil {
 		return st, fatal("nodes", err)
 	}
-	for c := range podCIDRs {
-		st.Cluster.PodCIDRs = append(st.Cluster.PodCIDRs, c)
-	}
-	sort.Strings(st.Cluster.PodCIDRs)
+	applyNodes(&st, rawNodes)
 
 	// Controllers.
 	workloads := map[string]model.Workload{}
@@ -345,4 +322,35 @@ func convertPolicy(p netv1.NetworkPolicy) model.NetworkPolicy {
 		out.Egress = append(out.Egress, er)
 	}
 	return out
+}
+
+// applyNodes fills st.Nodes, st.ProviderIDs and st.Cluster.PodCIDRs (falling back to the legacy
+// single PodCIDR) from raw nodes, all sorted. Read and Probe share it.
+func applyNodes(st *collect.ClusterState, raw []corev1.Node) {
+	podCIDRs := map[string]bool{}
+	for _, n := range raw {
+		node := model.Node{Name: n.Name, IPs: []string{}}
+		for _, a := range n.Status.Addresses {
+			if a.Type == corev1.NodeInternalIP {
+				node.IPs = append(node.IPs, a.Address)
+			}
+		}
+		sort.Strings(node.IPs)
+		st.Nodes = append(st.Nodes, node)
+		if n.Spec.ProviderID != "" {
+			st.ProviderIDs = append(st.ProviderIDs, n.Spec.ProviderID)
+		}
+		for _, c := range n.Spec.PodCIDRs {
+			podCIDRs[c] = true
+		}
+		if len(n.Spec.PodCIDRs) == 0 && n.Spec.PodCIDR != "" {
+			podCIDRs[n.Spec.PodCIDR] = true
+		}
+	}
+	for c := range podCIDRs {
+		st.Cluster.PodCIDRs = append(st.Cluster.PodCIDRs, c)
+	}
+	sort.Strings(st.Cluster.PodCIDRs)
+	sort.Slice(st.Nodes, func(i, j int) bool { return st.Nodes[i].Name < st.Nodes[j].Name })
+	sort.Strings(st.ProviderIDs)
 }

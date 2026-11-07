@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jbrathwa/outflow/internal/collect"
 	"github.com/jbrathwa/outflow/internal/model"
 	authv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,8 +20,6 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/yaml"
 )
-
-var _ collect.ClusterSource = (*Source)(nil)
 
 func TestClusterRoleMatchesRequiredPermissions(t *testing.T) {
 	data, err := os.ReadFile("../../../deploy/clusterrole.yaml")
@@ -122,7 +119,7 @@ func TestAccessReviewError(t *testing.T) {
 		return true, nil, fmt.Errorf("boom")
 	})
 	st := NewFromClients(cs, nil, "c").checkAccess(context.Background())
-	if st.State == "ok" || !strings.Contains(st.Detail, "not checked") {
+	if st.State == "ok" || !strings.Contains(st.Detail, fmt.Sprintf("not checked: %d permissions (30 required)", len(RequiredPermissions))) {
 		t.Fatalf("%+v", st)
 	}
 }

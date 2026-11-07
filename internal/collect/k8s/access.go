@@ -3,7 +3,6 @@ package k8s
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/jbrathwa/outflow/internal/collect"
@@ -62,6 +61,7 @@ func buildPermissions() []Permission {
 // required permission is granted.
 func (s *Source) checkAccess(ctx context.Context) model.SourceStatus {
 	var missing, optMissing, unchecked []string
+	uncheckedReq := 0
 	for _, p := range RequiredPermissions {
 		review := &authv1.SelfSubjectAccessReview{Spec: authv1.SelfSubjectAccessReviewSpec{
 			ResourceAttributes: &authv1.ResourceAttributes{
@@ -72,6 +72,9 @@ func (s *Source) checkAccess(ctx context.Context) model.SourceStatus {
 		switch {
 		case err != nil:
 			unchecked = append(unchecked, p.String())
+			if !p.Optional {
+				uncheckedReq++
+			}
 		case res.Status.Allowed:
 		case p.Optional:
 			optMissing = append(optMissing, p.String())
@@ -96,7 +99,7 @@ func (s *Source) checkAccess(ctx context.Context) model.SourceStatus {
 		notes = append(notes, "optional missing: "+strings.Join(optMissing, ", "))
 	}
 	if len(unchecked) > 0 {
-		notes = append(notes, fmt.Sprintf("not checked (access review failed): %d permissions", len(unchecked)))
+		notes = append(notes, fmt.Sprintf("not checked: %d permissions (%d required)", len(unchecked), uncheckedReq))
 	}
 	st.Detail = strings.Join(notes, "; ")
 	return st
@@ -106,7 +109,6 @@ func (s *Source) checkAccess(ctx context.Context) model.SourceStatus {
 // check. It does not list pods, workloads or policies.
 func (s *Source) Probe(ctx context.Context) (collect.ClusterState, error) {
 	st := collect.ClusterState{Cluster: model.Cluster{Name: s.context, Context: s.context}}
-	podCIDRs := map[string]bool{}
 	var rawNodes []corev1.Node
 	err := listAll(func(o metav1.ListOptions) (string, error) {
 		l, err := s.cs.CoreV1().Nodes().List(ctx, o)
@@ -122,31 +124,7 @@ func (s *Source) Probe(ctx context.Context) (collect.ClusterState, error) {
 		}
 		return st, fmt.Errorf("kubernetes: cannot list nodes: %w", err)
 	}
-	for _, n := range rawNodes {
-		node := model.Node{Name: n.Name, IPs: []string{}}
-		for _, a := range n.Status.Addresses {
-			if a.Type == corev1.NodeInternalIP {
-				node.IPs = append(node.IPs, a.Address)
-			}
-		}
-		sort.Strings(node.IPs)
-		st.Nodes = append(st.Nodes, node)
-		if n.Spec.ProviderID != "" {
-			st.ProviderIDs = append(st.ProviderIDs, n.Spec.ProviderID)
-		}
-		for _, c := range n.Spec.PodCIDRs {
-			podCIDRs[c] = true
-		}
-		if len(n.Spec.PodCIDRs) == 0 && n.Spec.PodCIDR != "" {
-			podCIDRs[n.Spec.PodCIDR] = true
-		}
-	}
-	for c := range podCIDRs {
-		st.Cluster.PodCIDRs = append(st.Cluster.PodCIDRs, c)
-	}
-	sort.Strings(st.Cluster.PodCIDRs)
-	sort.Slice(st.Nodes, func(i, j int) bool { return st.Nodes[i].Name < st.Nodes[j].Name })
-	sort.Strings(st.ProviderIDs)
+	applyNodes(&st, rawNodes)
 
 	det, detSrc := detect(ctx, s.cs, s.dyn, rawNodes)
 	st.Cluster.Platform, st.Cluster.Region, st.Cluster.CNI = det.Platform, det.Region, det.CNI
