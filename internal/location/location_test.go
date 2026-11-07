@@ -133,3 +133,12 @@ func TestLoadDir(t *testing.T) {
 		t.Errorf("want geo.csv parse error, got %v", err)
 	}
 }
+
+func TestHasGeoIP(t *testing.T) {
+	if !embedded(t).HasGeoIP() {
+		t.Error("embedded DB should have GeoIP rows")
+	}
+	if (&DB{}).HasGeoIP() {
+		t.Error("empty DB should not have GeoIP rows")
+	}
+}

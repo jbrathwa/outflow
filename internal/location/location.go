@@ -147,3 +147,6 @@ func (db *DB) Lookup(ip netip.Addr) Location {
 	}
 	return Location{HowKnown: None}
 }
+
+// HasGeoIP reports whether the database holds any GeoIP country ranges.
+func (db *DB) HasGeoIP() bool { return len(db.geo) > 0 }
