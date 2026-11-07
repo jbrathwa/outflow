@@ -21,8 +21,9 @@ const (
 	NodeLevel Evidence = "node-level" // firewall traffic tied only to a node (hostNetwork lookup or none)
 )
 
-// JoinBins is how many one-minute bins after a lookup a firewall event may still join it.
-const JoinBins = 1
+// DefaultJoinWindow is how long after a lookup a firewall event may still join it.
+// Clients cache DNS answers, so connections arrive minutes after the lookup.
+const DefaultJoinWindow = 5 * time.Minute
 
 // Observation is one subject reaching one destination on one port with one action.
 type Observation struct {
@@ -57,7 +58,7 @@ type candidate struct {
 
 // Attribute joins CoreDNS lookups with firewall events by node, domain and time,
 // and returns merged observations sorted by subject, destination, port and action.
-func Attribute(s model.Snapshot) []Observation {
+func Attribute(s model.Snapshot, window time.Duration) []Observation {
 	nodeByIP := map[string]string{}
 	for _, n := range s.Nodes {
 		for _, ip := range n.IPs {
@@ -73,7 +74,7 @@ func Attribute(s model.Snapshot) []Observation {
 		if !ok {
 			continue // another cluster behind the same firewall
 		}
-		obs = append(obs, attributeEvent(e, node, lookups, res)...)
+		obs = append(obs, attributeEvent(e, node, lookups, res, window)...)
 	}
 	for _, l := range lookups {
 		if l.matched {
@@ -181,12 +182,12 @@ func unknownPodSubject(ip string) string { return unknownPodPrefix + ip + ")" }
 func isUnknownPod(subject string) bool { return strings.HasPrefix(subject, unknownPodPrefix) }
 
 // attributeEvent turns one firewall event into observations for its candidate subjects.
-func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res resolutions) []Observation {
+func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res resolutions, window time.Duration) []Observation {
 	domain := model.NormalizeDomain(e.Domain)
 	var cands []candidate
 	seen := map[string]bool{}
 	for _, l := range lookups {
-		if l.node != node || !inWindow(l.Bin, e.Bin) {
+		if l.node != node || !inWindow(l.Bin, e.Bin, window) {
 			continue
 		}
 		if domain != "" {
@@ -210,7 +211,7 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res res
 		o.IP, o.IPSource = eventIP(e, domain, res)
 		return []Observation{o}
 	}
-	unknown := unknownSources(e.Bin, cands, lookups)
+	unknown := unknownSources(e.Bin, cands, lookups, window)
 	out := make([]Observation, 0, len(cands))
 	for _, c := range cands {
 		o := base
@@ -238,10 +239,10 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res res
 // unknownSources returns the sorted, deduped subjects of unknown-pod lookups (node unknown,
 // so any node) for a candidate's domain within the event's join window. Any of them could
 // have made the call, so they rule out Confirmed.
-func unknownSources(eventBin time.Time, cands []candidate, lookups []*lookup) []string {
+func unknownSources(eventBin time.Time, cands []candidate, lookups []*lookup, window time.Duration) []string {
 	var out []string
 	for _, l := range lookups {
-		if l.node != "" || !inWindow(l.Bin, eventBin) || slices.Contains(out, l.subject) {
+		if l.node != "" || !inWindow(l.Bin, eventBin, window) || slices.Contains(out, l.subject) {
 			continue
 		}
 		if slices.ContainsFunc(cands, func(c candidate) bool { return c.domain == l.Domain }) {
@@ -252,9 +253,9 @@ func unknownSources(eventBin time.Time, cands []candidate, lookups []*lookup) []
 	return out
 }
 
-// inWindow reports whether an event bin is the lookup bin or up to JoinBins minutes later.
-func inWindow(lookupBin, eventBin time.Time) bool {
-	return !eventBin.Before(lookupBin) && !eventBin.After(lookupBin.Add(JoinBins*time.Minute))
+// inWindow reports whether an event bin is the lookup bin or up to window later.
+func inWindow(lookupBin, eventBin time.Time, window time.Duration) bool {
+	return !eventBin.Before(lookupBin) && !eventBin.After(lookupBin.Add(window))
 }
 
 func eventIP(e model.EgressEvent, domain string, res resolutions) (string, string) {

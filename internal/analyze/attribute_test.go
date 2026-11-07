@@ -43,10 +43,10 @@ func TestAttributeConfirmed(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 3},
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(1), Count: 4},
-		// two bins later: outside the join window
+		// two bins later: outside a one-minute join window
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(2), Count: 5},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, time.Minute)
 	requireLen(t, obs, 2)
 	want := Observation{
 		Subject: "(node) aks-node-1", NodeLevel: true, Domain: "api.stripe.com",
@@ -77,7 +77,7 @@ func TestAttributeLikelyTwoWorkloadsSameNode(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(1), Count: 6},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 3)
 	if obs[0].Subject != "jobs/sync" || obs[0].Evidence != DNSOnly {
 		t.Errorf("obs[0] = %+v, want jobs/sync DNS only", obs[0])
@@ -100,7 +100,7 @@ func TestAttributeDNSOnly(t *testing.T) {
 		{PodIP: "10.244.1.5", Domain: "api.stripe.com", Bin: at(5), Count: 3},
 		{PodIP: "10.244.1.5", Domain: "files.example.com", Bin: at(1), Count: 1},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	want := []Observation{
 		{Subject: "payments/api", Domain: "api.stripe.com", IP: "198.51.100.10", IPSource: "outflow", Evidence: DNSOnly, Hits: 5, LastSeen: at(5)},
@@ -116,7 +116,7 @@ func TestAttributeNodeLevelNoLookup(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.5", Domain: "mcr.microsoft.com", DestIP: "203.0.113.20", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(3), Count: 9},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 1)
 	want := Observation{
 		Subject: "(node) aks-node-2", NodeLevel: true, Domain: "mcr.microsoft.com",
@@ -137,7 +137,7 @@ func TestAttributeHostNetworkLookupFromNodeIP(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 1},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	for _, o := range obs {
 		if o.Subject != "(node) aks-node-1" || !o.NodeLevel {
@@ -159,7 +159,7 @@ func TestAttributeDenyKeepsAction(t *testing.T) {
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 1},
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "deny", Rule: "default-deny", Bin: at(0), Count: 2},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	if obs[0].Action != "allow" || obs[0].Hits != 1 || obs[1].Action != "deny" || obs[1].Hits != 2 {
 		t.Errorf("obs = %+v, want separate allow(1) and deny(2)", obs)
@@ -175,7 +175,7 @@ func TestAttributeDropsNonClusterNodeEvents(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.50.0.9", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 7},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 1)
 	if obs[0].Subject != "payments/api" || obs[0].Evidence != DNSOnly {
 		t.Errorf("obs = %+v, want only DNS-only lookup", obs[0])
@@ -190,7 +190,7 @@ func TestAttributeNetworkRuleByResolvedIP(t *testing.T) {
 		// no resolution matches this IP → node-level by IP
 		{NodeIP: "10.224.0.4", DestIP: "192.0.2.99", Protocol: "UDP", Port: 123, Action: "allow", Bin: at(1), Count: 2},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	want := []Observation{
 		{Subject: "(node) aks-node-1", NodeLevel: true, IP: "192.0.2.99", IPSource: "firewall log", Port: 123, Action: "allow", Evidence: NodeLevel, Hits: 2, LastSeen: at(1)},
@@ -215,7 +215,7 @@ func TestAttributePodIPReuse(t *testing.T) {
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(10), Count: 1},
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(40), Count: 1},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	if obs[0].Subject != "billing/worker" || obs[0].Evidence != Confirmed || !obs[0].LastSeen.Equal(at(40)) {
 		t.Errorf("obs[0] = %+v, want billing/worker confirmed at 10:40", obs[0])
@@ -232,7 +232,7 @@ func TestAttributeDomainNormalization(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 1},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 1)
 	want := Observation{
 		Subject: "payments/api", Domain: "api.stripe.com", IP: "198.51.100.10", IPSource: "outflow",
@@ -249,7 +249,7 @@ func TestAttributeUnknownPod(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 1},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	if obs[0].Subject != "(node) aks-node-1" || obs[0].Evidence != NodeLevel {
 		t.Errorf("obs[0] = %+v, want node-level event", obs[0])
@@ -264,7 +264,7 @@ func TestAttributeUnknownPod(t *testing.T) {
 }
 
 func TestAttributeEmptySnapshot(t *testing.T) {
-	if obs := Attribute(model.Snapshot{}); len(obs) != 0 {
+	if obs := Attribute(model.Snapshot{}, DefaultJoinWindow); len(obs) != 0 {
 		t.Errorf("obs = %+v, want none", obs)
 	}
 }
@@ -280,7 +280,7 @@ func TestAttributeMergeKeepsLikely(t *testing.T) {
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 2},
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(5), Count: 3},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	a := obs[0]
 	if a.Subject != "payments/api" || a.Evidence != Likely || a.Hits != 5 || !a.LastSeen.Equal(at(5)) ||
@@ -299,7 +299,7 @@ func TestAttributeUnknownPodDowngradesConfirmed(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(1), Count: 3},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	want := []Observation{
 		{Subject: "payments/api", Domain: "api.stripe.com", IP: "198.51.100.10", IPSource: "outflow", Port: 443, Action: "allow",
@@ -324,7 +324,7 @@ func TestAttributeNodeLookupWithoutFirewallIsDNSOnly(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.5", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 2},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	want := Observation{
 		Subject: "(node) aks-node-1", NodeLevel: true, Domain: "stledgerweu.blob.core.windows.net",
@@ -348,7 +348,7 @@ func TestAttributeDropsDNSOnlyBesideJoined(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "deny", Bin: at(0), Count: 3},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	if o := obs[0]; o.Subject != "payments/api" || o.Evidence != Confirmed || o.Action != "deny" || o.Hits != 3 {
 		t.Errorf("obs[0] = %+v, want only the joined payments/api row", o)
@@ -371,7 +371,7 @@ func TestAttributeIPSourceFromResolution(t *testing.T) {
 	s.EgressEvents = []model.EgressEvent{
 		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 1},
 	}
-	obs := Attribute(s)
+	obs := Attribute(s, DefaultJoinWindow)
 	requireLen(t, obs, 2)
 	if obs[0].IP != "198.51.100.10" || obs[0].IPSource != "firewall log" {
 		t.Errorf("firewall resolution: %+v, want IP source firewall log", obs[0])

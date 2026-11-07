@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/location"
@@ -64,13 +65,27 @@ type Report struct {
 	RuleConfigured bool             `json:"ruleConfigured"`
 	Rule           string           `json:"rule"`
 	LocationData   string           `json:"locationData"`
+	JoinWindow     string           `json:"joinWindow"`
 	Counts         Counts           `json:"counts"`
 	Workloads      []WorkloadResult `json:"workloads"`
 }
 
-// Build attributes the snapshot's egress, locates and classifies every destination,
-// and returns sorted rows: every workload, plus node-level and unknown-pod subjects.
+// Options tunes the analysis. A zero JoinWindow means DefaultJoinWindow.
+type Options struct {
+	JoinWindow time.Duration
+}
+
+// Build is BuildWith using default options.
 func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
+	return BuildWith(s, db, cfg, Options{})
+}
+
+// BuildWith attributes the snapshot's egress, locates and classifies every destination,
+// and returns sorted rows: every workload, plus node-level and unknown-pod subjects.
+func BuildWith(s model.Snapshot, db *location.DB, cfg config.Config, opt Options) Report {
+	if opt.JoinWindow <= 0 {
+		opt.JoinWindow = DefaultJoinWindow
+	}
 	r := cfg.Residency
 	rep := Report{
 		SchemaVersion:  ReportSchemaVersion,
@@ -79,6 +94,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 		RuleConfigured: r != nil,
 		Rule:           ruleString(r),
 		LocationData:   db.Version(),
+		JoinWindow:     opt.JoinWindow.String(),
 		Workloads:      []WorkloadResult{},
 	}
 
@@ -94,7 +110,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 			Egress: netpol.Evaluate(w, s.NetworkPolicies, private),
 		})
 	}
-	for _, o := range Attribute(s) {
+	for _, o := range Attribute(s, opt.JoinWindow) {
 		i, ok := idx[o.Subject]
 		if !ok {
 			i = len(rep.Workloads)
