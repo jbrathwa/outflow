@@ -1,0 +1,4 @@
+prefix,name
+13.32.0.0/15,CloudFront
+104.16.0.0/13,Cloudflare
+151.101.0.0/16,Fastly
