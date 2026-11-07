@@ -153,10 +153,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - run: go install github.com/jbrathwa/outflow@latest
+      - name: Install outflow
+        run: |
+          base=https://github.com/jbrathwa/outflow/releases/latest/download
+          cd "$RUNNER_TEMP"
+          curl -sSLO "$base/outflow_Linux_x86_64.tar.gz"
+          curl -sSLO "$base/checksums.txt"
+          sha256sum --ignore-missing -c checksums.txt
+          tar xzf outflow_Linux_x86_64.tar.gz outflow
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Check data residency
         run: |
           set +e
@@ -169,6 +174,9 @@ jobs:
 
 Exit 2 means the rule is broken; exit 1 means the job could not judge (bad
 config, missing sources, partial coverage). Treat both as failures.
+
+To pin a version instead of `latest`, use
+`https://github.com/jbrathwa/outflow/releases/download/v0.1.0` as `base`.
 
 ## Doctor
 
