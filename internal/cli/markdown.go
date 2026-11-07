@@ -38,10 +38,17 @@ func WriteMarkdown(w io.Writer, r analyze.Report, cov doctor.Coverage) error {
 				cell(dest(d)), cell(locLabel(d.Location)), cell(string(d.Evidence)), action(d)))
 		}
 	}
-	if len(rows) == 0 {
+	first := "Status"
+	if !r.RuleConfigured {
+		first = "Locations"
+	}
+	switch {
+	case len(rows) == 0 && r.RuleConfigured:
 		b.WriteString("No destinations outside the allowed locations.\n")
-	} else {
-		b.WriteString("| Status | Workload | Destination | Location | Evidence | Action |\n|---|---|---|---|---|---|\n")
+	case len(rows) == 0:
+		b.WriteString("No external destinations observed.\n")
+	default:
+		fmt.Fprintf(&b, "| %s | Workload | Destination | Location | Evidence | Action |\n|---|---|---|---|---|---|\n", first)
 		b.WriteString(strings.Join(rows, "\n") + "\n")
 	}
 	_, err := io.WriteString(w, b.String())

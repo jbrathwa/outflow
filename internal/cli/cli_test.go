@@ -212,8 +212,15 @@ func TestMarkdownNoViolations(t *testing.T) {
 
 func TestMarkdownNeutral(t *testing.T) {
 	_, stdout, _ := run(t, "scan", "--demo", "--format", "md")
-	if !strings.Contains(stdout, "rule: none") || !strings.Contains(stdout, "| Status | Workload |") {
+	if !strings.Contains(stdout, "rule: none") || !strings.Contains(stdout, "| Locations | Workload |") {
 		t.Errorf("got %q", stdout)
+	}
+	var b bytes.Buffer
+	if err := WriteMarkdown(&b, analyze.Report{}, doctor.Coverage{Level: doctor.Full}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "No external destinations observed.") {
+		t.Errorf("empty neutral report: %q", b.String())
 	}
 }
 
