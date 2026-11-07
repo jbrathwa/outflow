@@ -5,6 +5,7 @@ package analyze
 import (
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jbrathwa/outflow/internal/model"
@@ -151,7 +152,7 @@ func resolveLookups(s model.Snapshot, nodeByIP map[string]string) []*lookup {
 	out := make([]*lookup, 0, len(s.DNSLookups))
 	for _, d := range s.DNSLookups {
 		d.Domain = model.NormalizeDomain(d.Domain)
-		l := &lookup{DNSLookup: d, subject: "unknown pod (" + d.PodIP + ")"}
+		l := &lookup{DNSLookup: d, subject: unknownPodSubject(d.PodIP)}
 		if node, ok := nodeByIP[d.PodIP]; ok {
 			l.subject, l.nodeLevel, l.node = nodeSubject(node), true, node
 		} else {
@@ -172,6 +173,12 @@ func alive(p model.Pod, t time.Time) bool {
 }
 
 func nodeSubject(node string) string { return "(node) " + node }
+
+const unknownPodPrefix = "unknown pod ("
+
+func unknownPodSubject(ip string) string { return unknownPodPrefix + ip + ")" }
+
+func isUnknownPod(subject string) bool { return strings.HasPrefix(subject, unknownPodPrefix) }
 
 // attributeEvent turns one firewall event into observations for its candidate subjects.
 func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res resolutions) []Observation {

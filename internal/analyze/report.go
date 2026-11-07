@@ -23,9 +23,19 @@ type Destination struct {
 	SaaS      bool              `json:"saas"`
 }
 
+// RowKind says what a report row stands for.
+type RowKind string
+
+const (
+	KindWorkload   RowKind = "workload"    // a controller from the snapshot
+	KindNode       RowKind = "node"        // "(node) <name>": traffic tied only to a node
+	KindUnknownPod RowKind = "unknown pod" // "unknown pod (<ip>)": pod not in pod history
+)
+
 // WorkloadResult is one report row: a workload, a node, or an unknown pod.
 type WorkloadResult struct {
 	ID           string        `json:"id"`
+	Kind         RowKind       `json:"kind"`
 	NodeLevel    bool          `json:"nodeLevel"`
 	HostNetwork  bool          `json:"hostNetwork"`
 	Egress       netpol.Result `json:"egress"`
@@ -80,7 +90,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 		}
 		idx[w.ID()] = len(rep.Workloads)
 		rep.Workloads = append(rep.Workloads, WorkloadResult{
-			ID: w.ID(), HostNetwork: w.HostNetwork,
+			ID: w.ID(), Kind: KindWorkload, HostNetwork: w.HostNetwork,
 			Egress: netpol.Evaluate(w, s.NetworkPolicies, private),
 		})
 	}
@@ -89,7 +99,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 		if !ok {
 			i = len(rep.Workloads)
 			idx[o.Subject] = i
-			rep.Workloads = append(rep.Workloads, WorkloadResult{ID: o.Subject, NodeLevel: o.NodeLevel})
+			rep.Workloads = append(rep.Workloads, WorkloadResult{ID: o.Subject, Kind: subjectKind(o), NodeLevel: o.NodeLevel})
 		}
 		d := Destination{Observation: o, Location: locate(db, o.IP), SaaS: location.IsSaaS(o.Domain)}
 		d.Status, d.Exception = Classify(d, r, o.Subject)
@@ -122,6 +132,18 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 	rep.Counts.Countries = len(countries)
 	sortRows(rep.Workloads, r != nil)
 	return rep
+}
+
+// subjectKind classifies an observation subject that is not a snapshot workload.
+// A pod whose workload is missing from the snapshot still counts as a workload.
+func subjectKind(o Observation) RowKind {
+	switch {
+	case o.NodeLevel:
+		return KindNode
+	case isUnknownPod(o.Subject):
+		return KindUnknownPod
+	}
+	return KindWorkload
 }
 
 // locate looks up a destination IP; an empty or unparsable IP has no location.

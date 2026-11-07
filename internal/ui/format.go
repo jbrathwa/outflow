@@ -55,9 +55,9 @@ func windowLabel(start, end time.Time) string {
 // egressLine explains a row's egress posture in one sentence.
 func egressLine(w analyze.WorkloadResult) string {
 	switch {
-	case w.NodeLevel:
+	case w.Kind == analyze.KindNode:
 		return "traffic seen from this node with no workload attribution"
-	case strings.HasPrefix(w.ID, "unknown pod"):
+	case w.Kind == analyze.KindUnknownPod:
 		return "pod no longer in pod history"
 	case w.HostNetwork || w.Egress.Mode == netpol.HostNetwork:
 		return "egress: hostNetwork — NetworkPolicy does not apply"
@@ -82,12 +82,13 @@ func egressLine(w analyze.WorkloadResult) string {
 
 // egressCell is the short EGRESS column text, with the port restriction (e.g. internet:443).
 func egressCell(w analyze.WorkloadResult) string {
-	switch {
-	case w.NodeLevel:
+	switch w.Kind {
+	case analyze.KindNode:
 		return "node"
-	case strings.HasPrefix(w.ID, "unknown pod"):
+	case analyze.KindUnknownPod:
 		return "unknown"
-	case w.HostNetwork:
+	}
+	if w.HostNetwork {
 		return string(netpol.HostNetwork)
 	}
 	return w.Egress.String()

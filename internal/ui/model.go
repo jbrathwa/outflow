@@ -298,7 +298,7 @@ func (m Model) exceptionSnippet() []string {
 		target = "cidr: " + d.IP + bits
 	}
 	out := []string{"residency:", "  exceptions:", "    - " + target}
-	if !w.NodeLevel && !d.NodeLevel && !strings.HasPrefix(w.ID, "unknown pod (") {
+	if w.Kind == analyze.KindWorkload && !d.NodeLevel {
 		out = append(out, "      workload: "+w.ID)
 	}
 	return append(out, `      reason: ""`)

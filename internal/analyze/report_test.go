@@ -392,3 +392,21 @@ func TestBuildNoDNSOnlyBesideConfirmed(t *testing.T) {
 		t.Errorf("counts = %+v, want 2 destinations: 1 outside, 1 inside", c)
 	}
 }
+
+func TestBuildRowKinds(t *testing.T) {
+	s := build([]string{"shop/web"}, []flow{
+		{"shop/web", "a.example.com", ipUS, "allow", 1},
+		{"", "node.example.com", ipNL, "allow", 1},
+	})
+	s.DNSLookups = append(s.DNSLookups, model.DNSLookup{PodIP: "10.244.9.9", Domain: "x.example.com", Bin: at(0), Count: 1})
+	r := Build(s, seedDB(t), config.Config{})
+	for id, want := range map[string]RowKind{
+		"shop/web":                 KindWorkload,
+		"(node) aks-node-1":        KindNode,
+		"unknown pod (10.244.9.9)": KindUnknownPod,
+	} {
+		if got := row(t, r, id).Kind; got != want {
+			t.Errorf("%s: kind %q, want %q", id, got, want)
+		}
+	}
+}
