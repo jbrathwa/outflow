@@ -2,7 +2,6 @@
 package ui
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -305,41 +304,7 @@ func (m Model) exceptionSnippet() []string {
 	return append(out, `      reason: ""`)
 }
 
-// sortedDests is the displayed destination order: worst status first when a rule is
-// set (outside, unknown, outside (denied), inside), then hits descending, then name.
+// sortedDests is the displayed destination order (see analyze.SortedDestinations).
 func (m Model) sortedDests(w analyze.WorkloadResult) []analyze.Destination {
-	ds := append([]analyze.Destination(nil), w.Destinations...)
-	rank := func(s analyze.Status) int {
-		if !m.report.RuleConfigured {
-			return 0
-		}
-		switch s {
-		case analyze.Outside:
-			return 0
-		case analyze.Unknown:
-			return 1
-		case analyze.OutsideDenied:
-			return 2
-		case analyze.Inside:
-			return 3
-		}
-		return 4
-	}
-	name := func(d analyze.Destination) string {
-		if d.Domain != "" {
-			return d.Domain
-		}
-		return d.IP
-	}
-	sort.SliceStable(ds, func(i, j int) bool {
-		a, b := ds[i], ds[j]
-		if ra, rb := rank(a.Status), rank(b.Status); ra != rb {
-			return ra < rb
-		}
-		if a.Hits != b.Hits {
-			return a.Hits > b.Hits
-		}
-		return name(a) < name(b)
-	})
-	return ds
+	return analyze.SortedDestinations(w.Destinations, m.report.RuleConfigured)
 }

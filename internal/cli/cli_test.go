@@ -200,6 +200,22 @@ func TestScanMarkdownGolden(t *testing.T) {
 	}
 }
 
+func TestMarkdownRowsWorstFirst(t *testing.T) {
+	_, stdout, _ := run(t, "scan", "--demo", "--demo-rule", "--format", "md")
+	blob := strings.Index(stdout, "| outside | payments/ledger-worker | stledgerweu")
+	login := strings.Index(stdout, "| unknown | payments/ledger-worker | login.microsoftonline.com")
+	if blob < 0 || login < 0 || blob > login {
+		t.Errorf("ledger-worker rows not worst first (outside before unknown):\n%s", stdout)
+	}
+	// unknown rows tie on status: more hits first.
+	hf := strings.Index(stdout, "| ml/model-fetch | huggingface.co")
+	gcs := strings.Index(stdout, "| ml/model-fetch | storage.googleapis.com")
+	dns := strings.Index(stdout, "| ml/model-fetch | models.fetch-hub.example")
+	if hf < 0 || gcs < 0 || dns < 0 || hf > gcs || gcs > dns {
+		t.Errorf("model-fetch rows not ordered by hits:\n%s", stdout)
+	}
+}
+
 func TestMarkdownNoViolations(t *testing.T) {
 	var b bytes.Buffer
 	if err := WriteMarkdown(&b, analyze.Report{RuleConfigured: true, Rule: "allow US"}, doctor.Coverage{Level: doctor.Full}); err != nil {

@@ -26,7 +26,7 @@ func WriteMarkdown(w io.Writer, r analyze.Report, cov doctor.Coverage) error {
 
 	var rows []string
 	for _, wl := range r.Workloads {
-		for _, d := range wl.Destinations {
+		for _, d := range analyze.SortedDestinations(wl.Destinations, r.RuleConfigured) {
 			status := locLabel(d.Location)
 			if r.RuleConfigured {
 				if !offending(d, r) {

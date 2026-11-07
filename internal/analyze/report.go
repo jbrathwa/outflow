@@ -239,3 +239,45 @@ func ruleString(r *config.Residency) string {
 	parts := append(append([]string{}, r.Allow.Countries...), r.Allow.CloudRegions...)
 	return "allow " + strings.Join(parts, ", ")
 }
+
+// SortedDestinations returns a copy of ds in display order: worst status first when
+// ruled (outside, unknown, outside (denied), inside), then hits descending, then
+// domain or IP. The TUI and the Markdown report share this order.
+func SortedDestinations(ds []Destination, ruled bool) []Destination {
+	out := append([]Destination(nil), ds...)
+	order := func(s Status) int {
+		if !ruled {
+			return 0
+		}
+		switch s {
+		case Outside:
+			return 0
+		case Unknown:
+			return 1
+		case OutsideDenied:
+			return 2
+		case Inside:
+			return 3
+		}
+		return 4
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if ra, rb := order(a.Status), order(b.Status); ra != rb {
+			return ra < rb
+		}
+		if a.Hits != b.Hits {
+			return a.Hits > b.Hits
+		}
+		return a.Name() < b.Name()
+	})
+	return out
+}
+
+// Name is the destination's domain, or its IP when the domain is unknown.
+func (d Destination) Name() string {
+	if d.Domain != "" {
+		return d.Domain
+	}
+	return d.IP
+}

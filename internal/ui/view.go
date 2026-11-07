@@ -391,10 +391,7 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 	cursorLine := 0
 	for di, d := range dests {
 		focused := m.detailFocus && di == m.destCursor
-		name := d.Domain
-		if name == "" {
-			name = d.IP
-		}
+		name := d.Name()
 		glyph, gs := destGlyph(st, d.Status)
 		if m.report.RuleConfigured && glyph != "" {
 			name = gs.Render(glyph) + " " + name
@@ -429,10 +426,7 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 
 // destNotes lists the per-destination remarks shown under the table.
 func destNotes(d analyze.Destination) []string {
-	name := d.Domain
-	if name == "" {
-		name = d.IP
-	}
+	name := d.Name()
 	var n []string
 	add := func(s string) { n = append(n, name+": "+s) }
 	if d.Action == "deny" {
