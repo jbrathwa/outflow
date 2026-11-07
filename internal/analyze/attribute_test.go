@@ -288,3 +288,26 @@ func TestAttributeMergeKeepsLikely(t *testing.T) {
 		t.Errorf("obs[0] = %+v, want payments/api likely (confirmed+likely merged), 5 hits", a)
 	}
 }
+
+func TestAttributeUnknownPodDowngradesConfirmed(t *testing.T) {
+	s := baseSnapshot()
+	s.DNSLookups = []model.DNSLookup{
+		{PodIP: "10.244.1.5", Domain: "api.stripe.com", Bin: at(0), Count: 1},
+		// finished Job pod, not in pod history
+		{PodIP: "10.244.3.8", Domain: "API.Stripe.com.", Bin: at(0), Count: 2},
+	}
+	s.EgressEvents = []model.EgressEvent{
+		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(1), Count: 3},
+	}
+	obs := Attribute(s)
+	requireLen(t, obs, 2)
+	want := []Observation{
+		{Subject: "payments/api", Domain: "api.stripe.com", IP: "198.51.100.10", IPSource: "outflow", Port: 443, Action: "allow",
+			Evidence: Likely, Hits: 3, LastSeen: at(1), AlsoLikely: []string{"unknown pod (10.244.3.8)"}},
+		{Subject: "unknown pod (10.244.3.8)", Domain: "api.stripe.com", IP: "198.51.100.10", IPSource: "outflow",
+			Evidence: DNSOnly, Hits: 2, LastSeen: at(0)},
+	}
+	if !reflect.DeepEqual(obs, want) {
+		t.Errorf("obs = %+v\nwant %+v", obs, want)
+	}
+}

@@ -165,19 +165,21 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res map
 		o.IP, o.IPSource = eventIP(e, domain, res)
 		return []Observation{o}
 	}
+	unknown := unknownSources(e.Bin, cands, lookups)
 	out := make([]Observation, 0, len(cands))
 	for _, c := range cands {
 		o := base
 		o.Subject, o.NodeLevel, o.Domain = c.subject, c.nodeLevel, c.domain
 		o.IP, o.IPSource = eventIP(e, c.domain, res)
 		o.Evidence = Confirmed
-		if len(cands) > 1 {
+		if len(cands) > 1 || len(unknown) > 0 {
 			o.Evidence = Likely
 			for _, other := range cands {
 				if other.subject != c.subject {
 					o.AlsoLikely = append(o.AlsoLikely, other.subject)
 				}
 			}
+			o.AlsoLikely = append(o.AlsoLikely, unknown...)
 			sort.Strings(o.AlsoLikely)
 		}
 		if c.nodeLevel {
@@ -185,6 +187,23 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res map
 		}
 		out = append(out, o)
 	}
+	return out
+}
+
+// unknownSources returns the sorted, deduped subjects of unknown-pod lookups (node unknown,
+// so any node) for a candidate's domain within the event's join window. Any of them could
+// have made the call, so they rule out Confirmed.
+func unknownSources(eventBin time.Time, cands []candidate, lookups []*lookup) []string {
+	var out []string
+	for _, l := range lookups {
+		if l.node != "" || !inWindow(l.Bin, eventBin) || slices.Contains(out, l.subject) {
+			continue
+		}
+		if slices.ContainsFunc(cands, func(c candidate) bool { return c.domain == l.Domain }) {
+			out = append(out, l.subject)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
