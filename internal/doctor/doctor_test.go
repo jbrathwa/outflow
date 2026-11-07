@@ -160,7 +160,7 @@ func TestDoctorPolicyEngine(t *testing.T) {
 		t.Errorf("empty engine = %+v", c)
 	}
 	s.Cluster.PolicyEngine, s.Cluster.CalicoCRDPolicies = "calico", 2
-	if c := find(t, Run(s, db(t), config.Config{}, false), "NetworkPolicy engine"); c.State != Warn {
+	if c := find(t, Run(s, db(t), config.Config{}, false), "NetworkPolicy engine"); c.State != Warn || c.Why != "egress modes may be incomplete" {
 		t.Errorf("calico CRD = %+v", c)
 	}
 }

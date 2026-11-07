@@ -137,6 +137,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	case c.CalicoCRDPolicies > 0:
 		policy.State = Warn
 		policy.Detail += fmt.Sprintf(" · %d Calico CRD policies", c.CalicoCRDPolicies)
+		policy.Why = "egress modes may be incomplete"
 		policy.Without = "Calico-specific policies are not analysed; results may overstate reachability"
 	}
 
