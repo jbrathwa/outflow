@@ -147,23 +147,33 @@ func lookupRow(r []any, ip, dom, bin, cnt int) (model.DNSLookup, bool) {
 
 var (
 	ipv4Re = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
-	ipv6Re = regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F]{0,4}`)
+	ipv6Re = regexp.MustCompile(`[0-9a-fA-F:]*:[0-9a-fA-F:]+`)
 )
 
 func scrubIPs(s string) string {
-	return ipv6Re.ReplaceAllString(ipv4Re.ReplaceAllString(s, "x.x.x.x"), "x.x.x.x")
+	s = ipv4Re.ReplaceAllString(s, "x.x.x.x")
+	// Only redact candidates that really parse as IPv6, so 12:30:45 timestamps survive.
+	return ipv6Re.ReplaceAllStringFunc(s, func(c string) string {
+		if _, err := netip.ParseAddr(c); err == nil {
+			return "x.x.x.x"
+		}
+		return c
+	})
 }
 
-// Probe checks, over the last hour, that sample CoreDNS lines match the expected format.
+// Probe samples the last hour and returns two statuses, in order: coredns-logs-collected
+// (are CoreDNS query lines present) then coredns-log-format (do the lines match the
+// expected format). Lookups, by contrast, returns only coredns-logs-collected and runs
+// no sample query during a scan.
 func (d *DNSSource) Probe(ctx context.Context, sc collect.Scope) []model.SourceStatus {
 	ws := d.workspace()
 	if ws == "" {
-		return []model.SourceStatus{{ID: model.SrcCoreDNSFormat, State: "missing", Detail: noDNSWorkspace}}
+		return both(model.SourceStatus{State: "missing", Detail: noDNSWorkspace})
 	}
 	w := model.Window{Start: sc.Window.End.Add(-time.Hour), End: sc.Window.End}
 	t, err := d.LA.Query(ctx, "dns-sample", ws, dnsSampleKQL(w, sc.NodeNames), w)
 	if err != nil {
-		return []model.SourceStatus{queryFailure(model.SrcCoreDNSFormat, ws, err)}
+		return both(queryFailure("", ws, err))
 	}
 	li := t.Col("line")
 	var lines []string
@@ -175,7 +185,10 @@ func (d *DNSSource) Probe(ctx context.Context, sc collect.Scope) []model.SourceS
 		}
 	}
 	if len(lines) == 0 {
-		return []model.SourceStatus{{ID: model.SrcCoreDNSFormat, State: "missing", Detail: "no CoreDNS query lines in the last hour"}}
+		return []model.SourceStatus{
+			{ID: model.SrcCoreDNSCollected, State: "warn", Detail: "no CoreDNS query lines in the last hour"},
+			{ID: model.SrcCoreDNSFormat, State: "missing", Detail: "no CoreDNS query lines in the last hour"},
+		}
 	}
 	bad, first := 0, ""
 	for _, l := range lines {
@@ -187,15 +200,23 @@ func (d *DNSSource) Probe(ctx context.Context, sc collect.Scope) []model.SourceS
 		}
 	}
 	n := len(lines)
+	found := model.SourceStatus{ID: model.SrcCoreDNSCollected, State: "ok", Detail: "CoreDNS query lines found in the last hour"}
 	if bad == 0 {
-		return []model.SourceStatus{{ID: model.SrcCoreDNSFormat, State: "ok", Detail: fmt.Sprintf("%d/%d sample lines recognised", n, n)}}
+		return []model.SourceStatus{found, {ID: model.SrcCoreDNSFormat, State: "ok", Detail: fmt.Sprintf("%d/%d sample lines recognised", n, n)}}
 	}
 	f := []rune(scrubIPs(strings.TrimSpace(first)))
 	if len(f) > 60 {
 		f = f[:60]
 	}
-	return []model.SourceStatus{{ID: model.SrcCoreDNSFormat, State: "warn",
+	return []model.SourceStatus{found, {ID: model.SrcCoreDNSFormat, State: "warn",
 		Detail: fmt.Sprintf("%d/%d sample lines not recognised (first: %s)", bad, n, string(f))}}
+}
+
+// both returns st for the collected and the format source IDs, in that order.
+func both(st model.SourceStatus) []model.SourceStatus {
+	a, b := st, st
+	a.ID, b.ID = model.SrcCoreDNSCollected, model.SrcCoreDNSFormat
+	return []model.SourceStatus{a, b}
 }
 
 var coreDNSRe = regexp.MustCompile(`\]\s+(\S+) - \d+ "\S+ IN (\S+) [^"]*" (\S+)`)

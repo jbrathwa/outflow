@@ -131,7 +131,7 @@ func TestLookupsNoWorkspace(t *testing.T) {
 	d := dnsSource(s.URL, "")
 	got, sts := d.Lookups(context.Background(), dnsScope())
 	ps := d.Probe(context.Background(), dnsScope())
-	if got != nil || sts[0].State != "missing" || sts[0].Detail != "no workspace (set sources.dns_workspace or --workspace)" || ps[0].State != "missing" || ps[0].ID != model.SrcCoreDNSFormat {
+	if got != nil || sts[0].State != "missing" || sts[0].Detail != "no workspace (set sources.dns_workspace or --workspace)" || len(ps) != 2 || ps[0].State != "missing" || ps[1].State != "missing" || ps[0].ID != model.SrcCoreDNSCollected || ps[1].ID != model.SrcCoreDNSFormat {
 		t.Fatalf("%+v %+v", sts, ps)
 	}
 	if len(s.Calls()) != 0 {
@@ -208,7 +208,8 @@ const goodLine = `[INFO] 10.244.1.5:52345 - 1 "A IN api.example.com. udp 32 fals
 func TestProbeFormatOK(t *testing.T) {
 	s := sampleServer(t, []string{goodLine, goodLine})
 	sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
-	if len(sts) != 1 || sts[0].ID != model.SrcCoreDNSFormat || sts[0].State != "ok" || sts[0].Detail != "2/2 sample lines recognised" {
+	wantIDs(t, sts)
+	if sts[0].State != "ok" || sts[0].Detail != "CoreDNS query lines found in the last hour" || sts[1].State != "ok" || sts[1].Detail != "2/2 sample lines recognised" {
 		t.Fatalf("%+v", sts)
 	}
 	w := s.Calls()[0].Window
@@ -221,10 +222,11 @@ func TestProbeFormatWarn(t *testing.T) {
 	bad := "client 10.244.9.9 asked fd00::5 something odd that goes on and on and on for a long while"
 	s := sampleServer(t, []string{goodLine, bad, goodLine})
 	sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
-	if sts[0].State != "warn" || !strings.HasPrefix(sts[0].Detail, "1/3 sample lines not recognised (first: client x.x.x.x asked x.x.x.x") {
+	wantIDs(t, sts)
+	if sts[0].State != "ok" || sts[1].State != "warn" || !strings.HasPrefix(sts[1].Detail, "1/3 sample lines not recognised (first: client x.x.x.x asked x.x.x.x") {
 		t.Fatalf("%+v", sts)
 	}
-	if strings.Contains(sts[0].Detail, "10.244") || strings.Contains(sts[0].Detail, "fd00") {
+	if strings.Contains(sts[1].Detail, "10.244") || strings.Contains(sts[1].Detail, "fd00") {
 		t.Fatal("IP leaked")
 	}
 }
@@ -232,7 +234,40 @@ func TestProbeFormatWarn(t *testing.T) {
 func TestProbeNoLines(t *testing.T) {
 	s := sampleServer(t, nil)
 	sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
-	if sts[0].State != "missing" || sts[0].Detail != "no CoreDNS query lines in the last hour" {
+	wantIDs(t, sts)
+	if sts[0].State != "warn" || sts[0].Detail != "no CoreDNS query lines in the last hour" || sts[1].State != "missing" {
+		t.Fatalf("%+v", sts)
+	}
+}
+
+func wantIDs(t *testing.T, sts []model.SourceStatus) {
+	t.Helper()
+	if len(sts) != 2 || sts[0].ID != model.SrcCoreDNSCollected || sts[1].ID != model.SrcCoreDNSFormat {
+		t.Fatalf("ids/order: %+v", sts)
+	}
+}
+
+func TestProbeErrorsReportBothIDs(t *testing.T) {
+	for code, c := range map[int]string{403: "no access to workspace …000a (needs Log Analytics Reader)", 500: "query failed (workspace …000a)"} {
+		s := lafake.New(t, map[string]lafake.Handler{
+			"dns-sample": func(lafake.Call) (lafake.Response, int) {
+				return lafake.Response{ErrorCode: "X", ErrorMessage: "boom"}, code
+			},
+		})
+		sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
+		wantIDs(t, sts)
+		for _, st := range sts {
+			if st.State != "missing" || st.Detail != c {
+				t.Fatalf("%d: %+v", code, st)
+			}
+		}
+	}
+}
+
+func TestProbeScrubKeepsTimestamps(t *testing.T) {
+	s := sampleServer(t, []string{"at 12:30:45 from 10.244.9.9 odd"})
+	sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
+	if !strings.Contains(sts[1].Detail, "at 12:30:45 from x.x.x.x odd") {
 		t.Fatalf("%+v", sts)
 	}
 }
