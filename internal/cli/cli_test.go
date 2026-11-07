@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"os"
@@ -10,10 +11,8 @@ import (
 	"testing"
 
 	"github.com/jbrathwa/outflow/internal/analyze"
-	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/fixtures"
-	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
 )
 
@@ -42,13 +41,6 @@ func snapshotFile(t *testing.T, s model.Snapshot) string {
 		t.Fatal(err)
 	}
 	return writeFile(t, "snap.json", b)
-}
-
-func TestNoSourceErrors(t *testing.T) {
-	code, _, stderr := run(t, "scan")
-	if code != 1 || !strings.Contains(stderr, "live collection is not available yet; use --demo or --snapshot <file>") {
-		t.Fatalf("code=%d stderr=%q", code, stderr)
-	}
 }
 
 func TestScanDemoJSON(t *testing.T) {
@@ -284,13 +276,31 @@ func TestDoctorDegradedExit(t *testing.T) {
 
 func TestTUICalled(t *testing.T) {
 	called := false
-	tui := func(r analyze.Report, s model.Snapshot, db *location.DB, c config.Config) error {
-		called = r.Counts.Workloads > 0 && db != nil
-		return nil
+	var refreshed analyze.Report
+	tui := func(r analyze.Report, cov doctor.Level, refresh RefreshFunc) error {
+		called = r.Counts.Workloads > 0 && cov == doctor.Full
+		var err error
+		refreshed, cov, err = refresh(context.Background())
+		if cov != doctor.Full {
+			t.Errorf("refresh coverage = %q", cov)
+		}
+		return err
 	}
 	var out, errb bytes.Buffer
-	if code := Run([]string{"--demo"}, nil, &out, &errb, tui); code != 0 || !called {
+	if code := Run([]string{"--demo", "--join-window", "7m"}, nil, &out, &errb, tui); code != 0 || !called {
 		t.Fatalf("code=%d called=%v stderr=%q", code, called, errb.String())
+	}
+	if refreshed.Counts.Workloads == 0 || refreshed.JoinWindow != "7m0s" {
+		t.Errorf("refresh report: %d workloads, joinWindow %q", refreshed.Counts.Workloads, refreshed.JoinWindow)
+	}
+}
+
+func TestUsageListsLiveFlags(t *testing.T) {
+	for _, want := range []string{"--context", "--profile auto|azure|generic", "--since", "5m..30d",
+		"--workspace <guid>", "--join-window", "1m..60m", "--debug"} {
+		if !strings.Contains(usage, want) {
+			t.Errorf("usage lacks %q", want)
+		}
 	}
 }
 

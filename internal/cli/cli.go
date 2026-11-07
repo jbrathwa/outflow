@@ -3,15 +3,18 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/jbrathwa/outflow/internal/analyze"
+	"github.com/jbrathwa/outflow/internal/collect"
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/fixtures"
@@ -26,8 +29,12 @@ const (
 	exitRule  = 2
 )
 
+// RefreshFunc re-creates the report and its coverage level (re-collecting in live mode).
+// It is an alias so ui.Run stays assignable to TUIFunc without importing cli.
+type RefreshFunc = func(context.Context) (analyze.Report, doctor.Level, error)
+
 // TUIFunc runs the interactive UI for an analyzed report.
-type TUIFunc func(report analyze.Report, snap model.Snapshot, db *location.DB, cfg config.Config) error
+type TUIFunc func(report analyze.Report, coverage doctor.Level, refresh RefreshFunc) error
 
 const usage = `outflow shows which Kubernetes workloads reach the internet, and where.
 
@@ -37,14 +44,25 @@ Usage:
   outflow doctor [flags]     check data sources and coverage
   outflow version
 
+Without --demo or --snapshot, outflow reads the cluster in the current kubeconfig
+context and, on AKS, its Log Analytics workspaces (read-only).
+
 Common flags:
   --demo                 use the built-in demo snapshot
   --demo-rule            apply the built-in demo residency rule
   --snapshot <file>      read a snapshot JSON file
   --dump-demo            write the demo snapshot JSON to stdout
   --config <file>        residency config (default ./outflow.yaml if present)
-  --context, --profile, --since, --workspace
-                         accepted; used by live collection (not available yet)
+  --context <name>       kubeconfig context (default current-context)
+  --profile auto|azure|generic
+                         log sources to read (default auto: azure on AKS, else generic)
+  --since <duration>     how far back to read, 5m..30d (default 24h; e.g. 90m, 7d)
+  --workspace <guid>     Log Analytics workspace for DNS, pod and firewall logs
+                         (overrides sources in outflow.yaml)
+  --join-window <duration>
+                         how long after a DNS lookup a firewall event still counts,
+                         1m..60m (default 5m)
+  --debug                print query diagnostics to stderr (no log data)
 
 Scan flags:
   --format json|md       output format (default json)
@@ -58,9 +76,10 @@ Exit codes: 0 clean, 2 rule broken per --fail-on, 1 tool, setup or config error.
 
 // common holds the flags shared by every command.
 type common struct {
-	demo, demoDegraded, demoRule, dumpDemo bool
-	snapshot, config                       string
-	context, profile, since, workspace     string
+	demo, demoDegraded, demoRule, dumpDemo, debug bool
+	snapshot, config                              string
+	context, profile, since, workspace            string
+	joinWindow                                    string
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -71,10 +90,15 @@ func (c *common) register(fs *flag.FlagSet) {
 	fs.StringVar(&c.snapshot, "snapshot", "", "")
 	fs.StringVar(&c.config, "config", "", "")
 	fs.StringVar(&c.context, "context", "", "")
-	fs.StringVar(&c.profile, "profile", "", "")
+	fs.StringVar(&c.profile, "profile", "auto", "")
 	fs.StringVar(&c.since, "since", "", "")
 	fs.StringVar(&c.workspace, "workspace", "", "")
+	fs.StringVar(&c.joinWindow, "join-window", "5m", "")
+	fs.BoolVar(&c.debug, "debug", false, "")
 }
+
+// isLive reports whether no offline source (--demo, --demo-degraded, --snapshot) was given.
+func (c *common) isLive() bool { return !c.demo && !c.demoDegraded && c.snapshot == "" }
 
 // Run executes the outflow CLI and returns its exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) int {
@@ -127,9 +151,18 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		return exitOK
 	}
 	fail := func(err error) int {
-		fmt.Fprintf(stderr, "outflow: %v\n", err)
+		fmt.Fprintf(stderr, "outflow: %s\n", liveMessage(err))
 		return exitError
 	}
+	if c.debug {
+		collect.SetDebug(stderr)
+		defer collect.SetDebug(nil)
+	}
+	joinWindow, err := parseJoinWindow(c.joinWindow)
+	if err != nil {
+		return fail(err)
+	}
+	opt := analyze.Options{JoinWindow: joinWindow}
 
 	if cmd == "scan" {
 		if asJSON && format != "json" {
@@ -156,6 +189,30 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	}
 	cfgFound := cfg.Residency != nil
 
+	// collect returns the snapshot to analyze: the offline one, or a fresh live collection.
+	collectSnap := func(context.Context) (model.Snapshot, error) { return snap, nil }
+	ctx := context.Background()
+	if c.isLive() {
+		if cmd == "" && tui == nil {
+			return fail(errors.New("interactive view is not available"))
+		}
+		l, err := c.newLive(cfg)
+		if err != nil {
+			return fail(err)
+		}
+		var stop context.CancelFunc
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt)
+		defer stop()
+		collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Collect(ctx, l.opt) }
+		if cmd == "doctor" {
+			collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Probe(ctx, l.opt) }
+		}
+	}
+	snap, err = collectSnap(ctx)
+	if err != nil {
+		return fail(err)
+	}
+
 	switch cmd {
 	case "doctor":
 		res := doctor.Run(snap, db, cfg, cfgFound)
@@ -165,13 +222,24 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		}
 		return exitOK
 	case "scan":
-		return scan(stdout, stderr, snap, db, cfg, cfgFound, format, failOn, allowPartial)
+		return scan(stdout, stderr, snap, db, cfg, cfgFound, opt, format, failOn, allowPartial)
 	}
-	report := analyze.Build(snap, db, cfg)
 	if tui == nil {
 		return fail(errors.New("interactive view is not available"))
 	}
-	if err := tui(report, snap, db, cfg); err != nil {
+	analyzeSnap := func(s model.Snapshot) (analyze.Report, doctor.Level) {
+		return analyze.BuildWith(s, db, cfg, opt), doctor.Run(s, db, cfg, cfgFound).Coverage.Level
+	}
+	report, cov := analyzeSnap(snap)
+	refresh := func(ctx context.Context) (analyze.Report, doctor.Level, error) {
+		s, err := collectSnap(ctx)
+		if err != nil {
+			return analyze.Report{}, "", err
+		}
+		r, l := analyzeSnap(s)
+		return r, l, nil
+	}
+	if err := tui(report, cov, refresh); err != nil {
 		return fail(err)
 	}
 	return exitOK
@@ -213,7 +281,7 @@ func (c *common) loadSnapshot() (model.Snapshot, error) {
 		}
 		return s, nil
 	}
-	return model.Snapshot{}, errors.New("live collection is not available yet; use --demo or --snapshot <file>")
+	return model.Snapshot{}, nil // live: collected later
 }
 
 func (c *common) loadConfig() (config.Config, error) {

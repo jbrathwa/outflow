@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -19,7 +20,7 @@ const sideBySideMin = 110
 // Model is the workload-first screen: a workload table and a detail pane.
 type Model struct {
 	report   analyze.Report
-	rerun    func() analyze.Report
+	refresh  func(context.Context) (analyze.Report, doctor.Level, error)
 	coverage doctor.Level
 	styles   styles
 	keys     keyMap
@@ -38,8 +39,8 @@ type Model struct {
 	overlay      bool            // exception snippet box is open
 }
 
-// New builds the screen for a report. rerun re-creates the report on demand.
-func New(report analyze.Report, rerun func() analyze.Report) Model {
+// New builds the screen for a report. refresh re-creates the report and coverage on demand.
+func New(report analyze.Report, refresh func(context.Context) (analyze.Report, doctor.Level, error)) Model {
 	h := help.New()
 	st := newStyles()
 	h.Styles.ShortKey, h.Styles.ShortDesc, h.Styles.ShortSeparator = st.Muted, st.Muted, st.Muted
@@ -50,7 +51,7 @@ func New(report analyze.Report, rerun func() analyze.Report) Model {
 	in.PromptStyle = st.Prompt
 	in.Placeholder = "workload"
 	return Model{
-		report: report, rerun: rerun, coverage: doctor.Full,
+		report: report, refresh: refresh, coverage: doctor.Full,
 		styles: st, keys: newKeyMap(), help: h, input: in, detail: viewport.New(0, 0),
 	}
 }
@@ -173,13 +174,18 @@ func (m *Model) cycleStatus() {
 	m.reselect(id)
 }
 
-// rerunReport swaps in a fresh report, keeping the selected workload when it still exists.
+// rerunReport swaps in a fresh report and coverage, keeping the selected workload when it
+// still exists. A failed refresh keeps the current report.
 func (m *Model) rerunReport() {
-	if m.rerun == nil {
+	if m.refresh == nil {
+		return
+	}
+	report, cov, err := m.refresh(context.Background())
+	if err != nil {
 		return
 	}
 	id := m.selectedID()
-	m.report = m.rerun()
+	m.report, m.coverage = report, cov
 	if !m.report.RuleConfigured {
 		m.statusFilter = ""
 	}

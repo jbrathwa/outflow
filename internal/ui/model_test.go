@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +19,10 @@ import (
 )
 
 func init() { lipgloss.SetColorProfile(termenv.Ascii) }
+
+func refreshTo(r analyze.Report) func(context.Context) (analyze.Report, doctor.Level, error) {
+	return func(context.Context) (analyze.Report, doctor.Level, error) { return r, doctor.Full, nil }
+}
 
 func demoReport(t *testing.T, ruled bool) analyze.Report {
 	t.Helper()
@@ -447,7 +453,10 @@ func TestRerunCallsFunc(t *testing.T) {
 	calls := 0
 	newRep := rep
 	newRep.Workloads = rep.Workloads[1:] // first workload vanished
-	rerun := func() analyze.Report { calls++; return newRep }
+	rerun := func(context.Context) (analyze.Report, doctor.Level, error) {
+		calls++
+		return newRep, doctor.Partial, nil
+	}
 	m := sized(New(rep, rerun), 140, 40)
 	m = press(press(m, tea.KeyDown), tea.KeyDown) // select index 2
 	id := rep.Workloads[2].ID
@@ -455,18 +464,30 @@ func TestRerunCallsFunc(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("rerun calls = %d", calls)
 	}
+	if m.coverage != doctor.Partial {
+		t.Errorf("coverage should follow the refresh, got %q", m.coverage)
+	}
 	if m.cursor < 0 || m.cursor >= len(newRep.Workloads) || newRep.Workloads[m.cursor].ID != id {
 		t.Errorf("selection should follow %s, cursor=%d", id, m.cursor)
 	}
 	// shrink to one row: cursor clamps
 	one := rep
 	one.Workloads = rep.Workloads[:1]
-	m2 := keys(sized(New(rep, func() analyze.Report { return one }), 140, 40), "G")
+	m2 := keys(sized(New(rep, refreshTo(one)), 140, 40), "G")
 	m2 = keys(m2, "r")
 	if m2.cursor != 0 {
 		t.Errorf("cursor should clamp, got %d", m2.cursor)
 	}
 	keys(sized(New(rep, nil), 140, 40), "r") // nil rerun is a no-op
+
+	// A failed refresh keeps the old report and coverage.
+	failing := func(context.Context) (analyze.Report, doctor.Level, error) {
+		return analyze.Report{}, doctor.None, errors.New("boom")
+	}
+	m3 := keys(sized(New(rep, failing).WithCoverage(doctor.Full), 140, 40), "r")
+	if len(m3.report.Workloads) != len(rep.Workloads) || m3.coverage != doctor.Full {
+		t.Errorf("failed refresh replaced the report")
+	}
 }
 
 func TestHelpToggle(t *testing.T) {
@@ -591,7 +612,7 @@ func TestFilterEscKeepsSelection(t *testing.T) {
 func TestRerunDropsStatusFilterWhenNeutral(t *testing.T) {
 	rep := demoReport(t, true)
 	neutral := demoReport(t, false)
-	m := keys(sized(New(rep, func() analyze.Report { return neutral }), 140, 40), "f")
+	m := keys(sized(New(rep, refreshTo(neutral)), 140, 40), "f")
 	m = keys(m, "r")
 	if m.statusFilter != "" || strings.Contains(m.View(), "status:") {
 		t.Errorf("status filter should reset:\n%s", m.View())
@@ -600,7 +621,11 @@ func TestRerunDropsStatusFilterWhenNeutral(t *testing.T) {
 
 func TestReselectGoneDropsDetailFocus(t *testing.T) {
 	rep := demoReport(t, true)
-	m := press(sized(New(rep, func() analyze.Report { r := rep; r.Workloads = rep.Workloads[1:]; return r }), 140, 40), tea.KeyEnter)
+	m := press(sized(New(rep, func(context.Context) (analyze.Report, doctor.Level, error) {
+		r := rep
+		r.Workloads = rep.Workloads[1:]
+		return r, doctor.Full, nil
+	}), 140, 40), tea.KeyEnter)
 	m = keys(m, "r")
 	if m.detailFocus {
 		t.Errorf("detail focus should drop when the workload is gone")

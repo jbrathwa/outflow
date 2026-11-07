@@ -44,12 +44,12 @@ func nz(s []string) []string {
 }
 
 func scan(stdout, stderr io.Writer, snap model.Snapshot, db *location.DB, cfg config.Config,
-	cfgFound bool, format, failOn string, allowPartial bool) int {
+	cfgFound bool, opt analyze.Options, format, failOn string, allowPartial bool) int {
 	fail := func(err error) int {
 		fmt.Fprintf(stderr, "outflow: %v\n", err)
 		return exitError
 	}
-	report := analyze.Build(snap, db, cfg)
+	report := analyze.BuildWith(snap, db, cfg, opt)
 	cov := doctor.Run(snap, db, cfg, cfgFound).Coverage
 
 	// Validate the gate before printing anything: a bad gate must not look like a pass.
