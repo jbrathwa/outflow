@@ -370,3 +370,22 @@ func TestDoctorK8sAccessMissingFails(t *testing.T) {
 		t.Errorf("k8s = %+v failed=%v", k, r.Failed())
 	}
 }
+
+func TestDoctorOutboundUnknownIsNotChecked(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Cluster.OutboundType = ""
+	c := find(t, Run(s, db(t), demoCfg(t), true), "Outbound path")
+	if c.State != Warn || c.Detail != "not checked (AKS resource not read)" || c.Without != "" || c.Fix != "" {
+		t.Errorf("outbound = %+v", c)
+	}
+	s.Cluster.Platform = ""
+	c = find(t, Run(s, db(t), demoCfg(t), true), "Outbound path")
+	if c.State != Warn || c.Detail != "not checked" || c.Without != "" || c.Fix != "" {
+		t.Errorf("generic outbound = %+v", c)
+	}
+	s.Cluster.OutboundType = "loadBalancer"
+	c = find(t, Run(s, db(t), demoCfg(t), true), "Outbound path")
+	if c.State != Warn || c.Detail != "loadBalancer" || c.Fix == "" {
+		t.Errorf("loadBalancer outbound = %+v", c)
+	}
+}

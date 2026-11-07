@@ -142,15 +142,19 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	}
 
 	outbound := Check{Name: "Outbound path", State: OK, Detail: c.OutboundType}
-	if c.OutboundType == "userDefinedRouting" {
+	switch c.OutboundType {
+	case "userDefinedRouting":
 		if c.Firewall != "" {
 			outbound.Detail += " → Azure Firewall " + c.Firewall
 		}
-	} else {
-		outbound.State = Warn
-		if c.OutboundType == "" {
-			outbound.Detail = "unknown"
+	case "":
+		// Never read: say so rather than implying the path skips a firewall.
+		outbound.State, outbound.Detail = Warn, "not checked"
+		if c.Platform == "AKS" {
+			outbound.Detail = "not checked (AKS resource not read)"
 		}
+	default:
+		outbound.State = Warn
 		outbound.Without = "egress is not forced through a firewall, so there are no firewall logs to read"
 		outbound.Fix = "route outbound traffic through a firewall (outboundType userDefinedRouting)"
 	}
