@@ -146,3 +146,64 @@ func TestExceptionMatches(t *testing.T) {
 		})
 	}
 }
+
+const (
+	guidA = "00000000-0000-0000-0000-00000000000a"
+	guidB = "00000000-0000-0000-0000-00000000000b"
+	aksID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-eus/providers/Microsoft.ContainerService/managedClusters/aks-prod-eus"
+)
+
+func TestSourcesParse(t *testing.T) {
+	y := "sources:\n  dns_workspace: " + guidA + "\n  pod_inventory_workspace: " + guidB +
+		"\n  firewall_workspace: " + strings.ToUpper(guidA) + "\n  aks_cluster: " + aksID + "\n"
+	c, err := Parse([]byte(y))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := c.Sources
+	if s.DNSWorkspace != guidA || s.PodInventoryWorkspace != guidB || s.FirewallWorkspace != strings.ToUpper(guidA) || s.AKSCluster != aksID {
+		t.Errorf("unexpected sources: %+v", s)
+	}
+}
+
+func TestSourcesRejectBadGUID(t *testing.T) {
+	_, err := Parse([]byte("sources:\n  dns_workspace: x\n"))
+	if err == nil || !strings.Contains(err.Error(), `sources.dns_workspace: "x" is not a Log Analytics workspace ID (a GUID)`) {
+		t.Fatalf("got %v", err)
+	}
+	_, err = Parse([]byte("sources:\n  firewall_workspace: nope\n"))
+	if err == nil || !strings.Contains(err.Error(), "sources.firewall_workspace") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSourcesRejectBadAKSID(t *testing.T) {
+	_, err := Parse([]byte("sources:\n  aks_cluster: /subscriptions/x\n"))
+	if err == nil || !strings.Contains(err.Error(), "sources.aks_cluster:") || !strings.Contains(err.Error(), "is not an AKS resource ID") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSourcesOnlyKeepsNeutral(t *testing.T) {
+	c, err := Parse([]byte("sources:\n  dns_workspace: " + guidA + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Residency != nil {
+		t.Error("residency should stay nil")
+	}
+}
+
+func TestWithWorkspaceOverridesAll(t *testing.T) {
+	s := Sources{DNSWorkspace: guidA, AKSCluster: aksID}
+	got := s.WithWorkspace(guidB)
+	if got.DNSWorkspace != guidB || got.PodInventoryWorkspace != guidB || got.FirewallWorkspace != guidB || got.AKSCluster != aksID {
+		t.Errorf("got %+v", got)
+	}
+	if s.DNSWorkspace != guidA {
+		t.Error("receiver mutated")
+	}
+	if same := s.WithWorkspace(""); same != s {
+		t.Errorf("empty id changed sources: %+v", same)
+	}
+}

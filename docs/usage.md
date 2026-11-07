@@ -75,6 +75,12 @@ residency:
       workload: payments/payment-api     # optional: limit to one workload
       reason: "Partner network"
   unknown_location: warn                 # warn | fail | ignore
+
+sources:                                 # used by live collection; all optional
+  dns_workspace: 00000000-0000-0000-0000-00000000000a
+  pod_inventory_workspace: 00000000-0000-0000-0000-00000000000b
+  firewall_workspace: 00000000-0000-0000-0000-00000000000c
+  aks_cluster: /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-eus/providers/Microsoft.ContainerService/managedClusters/aks-prod-eus
 ```
 
 Reference:
@@ -87,6 +93,10 @@ Reference:
 | `residency.exceptions[]` | Exactly one of `domain` or `cidr`, plus a non-empty `reason`. `workload` (`namespace/name`) is optional and limits the exception to that workload |
 | exception `domain` | Matched case-insensitively and ignoring a trailing dot. `*.stripe.com` matches `api.stripe.com` but not `stripe.com` or `evilstripe.com` |
 | `residency.unknown_location` | `warn` (default): unknown destinations are shown and counted as unknown. `fail`: they also fail `--fail-on outside`. `ignore`: they are not counted at all |
+| `sources.dns_workspace`, `sources.pod_inventory_workspace`, `sources.firewall_workspace` | Log Analytics workspace IDs (GUIDs) read by live collection. `--workspace <id>` sets all three at once |
+| `sources.aks_cluster` | ARM resource ID of the AKS cluster, `/subscriptions/<guid>/resourceGroups/<name>/providers/Microsoft.ContainerService/managedClusters/<name>`. Used for ARM checks |
+
+A config with only `sources` and no `residency` section still runs in neutral mode.
 
 Config problems exit 1 with a message naming the field, for example
 `residency.allow.countries[0]: "us" must be two uppercase letters`. Unknown YAML
