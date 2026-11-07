@@ -201,6 +201,22 @@ func TestMarkdownNeutral(t *testing.T) {
 	}
 }
 
+func TestMarkdownActionColumn(t *testing.T) {
+	_, stdout, _ := run(t, "scan", "--demo", "--format", "md")
+	if !strings.Contains(stdout, "| Evidence | Action |\n|---|---|---|---|---|---|\n") {
+		t.Errorf("no Action column:\n%s", stdout)
+	}
+	for _, want := range []string{
+		"| shop/storefront | api.segment.io (54.145.112.20):443 | US (aws:us-east-1) | confirmed | deny |",
+		"| shop/storefront | stshopassets.blob.core.windows.net (20.60.128.36):443 | US (azure:eastus) | confirmed | allow |",
+		"| models.fetch-hub.example (52.210.17.44) | IE (aws:eu-west-1) | DNS only | — |",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("missing row %q:\n%s", want, stdout)
+		}
+	}
+}
+
 func TestDumpDemo(t *testing.T) {
 	code, stdout, _ := run(t, "--dump-demo", "--demo-rule")
 	if code != 0 || stdout != string(fixtures.DemoJSON()) {

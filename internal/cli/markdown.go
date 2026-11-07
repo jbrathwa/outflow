@@ -34,14 +34,14 @@ func WriteMarkdown(w io.Writer, r analyze.Report, cov doctor.Coverage) error {
 				}
 				status = string(d.Status)
 			}
-			rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s | %s |", cell(status), cell(wl.ID),
-				cell(dest(d)), cell(locLabel(d.Location)), cell(string(d.Evidence))))
+			rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s | %s | %s |", cell(status), cell(wl.ID),
+				cell(dest(d)), cell(locLabel(d.Location)), cell(string(d.Evidence)), action(d)))
 		}
 	}
 	if len(rows) == 0 {
 		b.WriteString("No destinations outside the allowed locations.\n")
 	} else {
-		b.WriteString("| Status | Workload | Destination | Location | Evidence |\n|---|---|---|---|---|\n")
+		b.WriteString("| Status | Workload | Destination | Location | Evidence | Action |\n|---|---|---|---|---|---|\n")
 		b.WriteString(strings.Join(rows, "\n") + "\n")
 	}
 	_, err := io.WriteString(w, b.String())
@@ -75,6 +75,14 @@ func dest(d analyze.Destination) string {
 		host += fmt.Sprintf(":%d", d.Port)
 	}
 	return host
+}
+
+// action is the firewall verdict: allow, deny, or "—" when only a lookup was seen.
+func action(d analyze.Destination) string {
+	if d.Action == "" {
+		return "—"
+	}
+	return cell(d.Action)
 }
 
 func locLabel(l location.Location) string {
