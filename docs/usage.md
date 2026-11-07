@@ -55,7 +55,7 @@ Cases that exit 1 on purpose, so a clean result never hides missing data:
 - `--fail-on` with coverage `NONE` (no traffic sources at all), always.
 - `--fail-on unknown` with `unknown_location: ignore` in the config, which
   contradict each other.
-- `doctor` when coverage is not `FULL`.
+- `doctor` when a required source is missing (see [Doctor](#doctor)).
 
 ## Residency rule: `outflow.yaml`
 
@@ -176,7 +176,17 @@ config, missing sources, partial coverage). Treat both as failures.
 Residency and Access. Each line is `✔` (ok), `!` (degrades coverage), `✖`
 (missing) or `·` (informational). Missing items include why it matters, what you
 lose without it, and a fix. It ends with the coverage verdict and what outflow can
-and cannot answer. The fix steps are in [the setup guide](setup.md). See [the demo walkthrough](demo.md#doctor-on-a-degraded-cluster)
+and cannot answer. The fix steps are in [the setup guide](setup.md).
+
+`doctor` exits 1 when a required source is missing. Required are:
+
+- the Kubernetes API;
+- at least one traffic source (firewall logs or CoreDNS query logs);
+- on Azure CNI Overlay or kubenet, where pods leave with node IPs: the CoreDNS
+  query logs (log plugin and log collection) and no NodeLocal DNS Cache.
+
+Anything else only lowers coverage. Partial coverage alone does not fail
+`doctor`; `scan --fail-on` fails on it unless you pass `--allow-partial`. See [the demo walkthrough](demo.md#doctor-on-a-degraded-cluster)
 for real output.
 
 ## Location data
