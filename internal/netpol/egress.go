@@ -171,11 +171,13 @@ func uniformPorts(rules []model.EgressRule) string {
 	return first
 }
 
+// renderPorts lists a rule's ports; "" when the rule allows all ports, which is
+// also the case when any spec omits its port.
 func renderPorts(ports []model.PortSpec) string {
 	var parts []string
 	for _, p := range ports {
 		if p.Port == 0 {
-			continue
+			return ""
 		}
 		s := strconv.Itoa(p.Port)
 		if p.EndPort > p.Port {

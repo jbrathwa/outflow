@@ -63,6 +63,8 @@ func TestEvaluate(t *testing.T) {
 			model.EgressRule{To: block("20.61.0.0/16")})}, "allowlist"},
 		{"port range", w, []model.NetworkPolicy{pol("shop", "p", eg,
 			model.EgressRule{To: block("20.60.0.0/16"), Ports: []model.PortSpec{{Port: 8000, EndPort: 8080}}})}, "allowlist:8000-8080"},
+		{"protocol-only port spec blank", w, []model.NetworkPolicy{pol("shop", "p", eg,
+			model.EgressRule{To: block("20.60.0.0/16"), Ports: []model.PortSpec{{Protocol: "TCP", Port: 443}, {Protocol: "UDP"}}})}, "allowlist"},
 		{"lower modes' ports ignored", w, []model.NetworkPolicy{pol("shop", "p", eg,
 			model.EgressRule{To: block("10.0.0.0/8")},
 			model.EgressRule{To: block("20.60.0.0/16"), Ports: port(443)})}, "allowlist:443"},
