@@ -72,6 +72,22 @@ func TestScanDemoJSON(t *testing.T) {
 	}
 }
 
+func TestScanJSONFlag(t *testing.T) {
+	_, want, _ := run(t, "scan", "--demo", "--format", "json")
+	for _, args := range [][]string{{"--json"}, {"--json", "--format", "json"}} {
+		code, stdout, stderr := run(t, append([]string{"scan", "--demo"}, args...)...)
+		if code != 0 || stdout != want {
+			t.Errorf("%v: code=%d stderr=%q, want the --format json output", args, code, stderr)
+		}
+	}
+	for _, args := range [][]string{{"--json", "--format", "md"}, {"--format", "md", "--json"}} {
+		code, stdout, stderr := run(t, append([]string{"scan", "--demo"}, args...)...)
+		if code != 1 || stdout != "" || !strings.Contains(stderr, "--json conflicts with --format md") {
+			t.Errorf("%v: code=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+}
+
 func TestScanDemoRuleFailOutside(t *testing.T) {
 	if code, _, _ := run(t, "scan", "--demo", "--demo-rule", "--fail-on", "outside"); code != 2 {
 		t.Fatalf("code=%d", code)

@@ -47,6 +47,7 @@ Common flags:
 
 Scan flags:
   --format json|md       output format (default json)
+  --json                 same as --format json
   --fail-on outside|unknown
                          exit 2 when the residency rule is broken
   --allow-partial        allow --fail-on with partial coverage
@@ -98,9 +99,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	var c common
 	c.register(fs)
 	var format, failOn string
-	var allowPartial bool
+	var allowPartial, asJSON bool
 	if cmd == "scan" {
 		fs.StringVar(&format, "format", "json", "")
+		fs.BoolVar(&asJSON, "json", false, "")
 		fs.StringVar(&failOn, "fail-on", "", "")
 		fs.BoolVar(&allowPartial, "allow-partial", false, "")
 	}
@@ -129,6 +131,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	}
 
 	if cmd == "scan" {
+		if asJSON && format != "json" {
+			return fail(fmt.Errorf("--json conflicts with --format %s", format))
+		}
 		if format != "json" && format != "md" {
 			return fail(fmt.Errorf("--format must be json or md, got %q", format))
 		}

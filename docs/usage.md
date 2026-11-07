@@ -34,6 +34,7 @@ Common flags (all commands):
 | Flag | Meaning |
 |---|---|
 | `--format json\|md` | Output format. `json` is the default; `md` is a short Markdown report for CI job summaries |
+| `--json` | Same as `--format json`. Combining it with `--format md` exits 1 |
 | `--fail-on outside\|unknown` | Exit 2 when the residency rule is broken. `outside` fails on destinations outside the allowed locations; `unknown` also fails on destinations whose location is unknown. Needs a residency rule |
 | `--allow-partial` | Let `--fail-on` run when coverage is `PARTIAL` |
 
