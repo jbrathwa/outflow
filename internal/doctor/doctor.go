@@ -69,8 +69,10 @@ func (r Result) Failed() bool {
 }
 
 const (
-	corednsFix = "add `log` to the coredns-custom ConfigMap (docs/setup.md#coredns)"
-	dnsWithout = "destinations only per node, not per workload"
+	laReaderFix  = "grant Log Analytics Reader on the workspace (docs/setup.md#roles)"
+	aksReaderFix = "grant Reader on the AKS resource (docs/setup.md#roles)"
+	corednsFix   = "add `log` to the coredns-custom ConfigMap (docs/setup.md#coredns)"
+	dnsWithout   = "destinations only per node, not per workload"
 )
 
 // Run evaluates the snapshot against outflow's data-source needs.
@@ -161,6 +163,9 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 
 	fw := fromSource(model.SrcFirewall, "Firewall logs", "", "what actually left the cluster",
 		"send firewall logs to the Log Analytics workspace (resource-specific tables)")
+	if strings.HasPrefix(fw.Detail, "no access to workspace") {
+		fw.Fix = laReaderFix
+	}
 	plug := fromSource(model.SrcCoreDNSPlugin, "CoreDNS query logs", "", dnsWithout, corednsFix)
 	coll := fromSource(model.SrcCoreDNSCollected, "Log collection", "", dnsWithout,
 		"include kube-system in the Container Insights data collection rule")
@@ -227,7 +232,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	if _, ok := src(model.SrcAKS); ok {
 		clusterChecks = append(clusterChecks, fromSource(model.SrcAKS, "AKS resource", "",
 			"AKS settings (outbound type, LocalDNS) are not read from Azure",
-			"grant Reader on the AKS resource (docs/setup.md#roles)"))
+			aksReaderFix))
 	}
 
 	r := Result{
@@ -262,8 +267,15 @@ func accessChecks(src func(string) (model.SourceStatus, bool),
 		kc.Required = true
 	}
 	if az {
-		ac = fromSource(model.SrcAzureAccess, "Azure", "", "no firewall or DNS logs can be queried",
-			"grant Log Analytics Reader on the workspace (docs/setup.md#roles)")
+		ac = fromSource(model.SrcAzureAccess, "Azure", "", "no firewall or DNS logs can be queried", laReaderFix)
+		// Name the role the detail says is missing: Reader on the AKS resource, Log Analytics
+		// Reader on workspaces, or both.
+		if ac.Fix != "" && strings.Contains(ac.Detail, "AKS resource") {
+			ac.Fix = aksReaderFix
+			if strings.Contains(ac.Detail, "workspace") {
+				ac.Fix = laReaderFix + "; " + aksReaderFix
+			}
+		}
 	}
 	return []Check{kc, ac}
 }

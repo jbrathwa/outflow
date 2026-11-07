@@ -389,3 +389,32 @@ func TestDoctorOutboundUnknownIsNotChecked(t *testing.T) {
 		t.Errorf("loadBalancer outbound = %+v", c)
 	}
 }
+
+func TestDoctorAzureAccessFixNamesTheRole(t *testing.T) {
+	const ws = "grant Log Analytics Reader on the workspace (docs/setup.md#roles)"
+	const aks = "grant Reader on the AKS resource (docs/setup.md#roles)"
+	for detail, want := range map[string]string{
+		"no access to AKS resource (Reader)":                                               aks,
+		"no access to workspace …000b (needs Log Analytics Reader)":                        ws,
+		"no access to workspace …000b (needs Log Analytics Reader), AKS resource (Reader)": ws + "; " + aks,
+		"no successful Azure calls":                                                        ws,
+	} {
+		s, _ := fixtures.Demo()
+		s.Sources = append(s.Sources, model.SourceStatus{ID: model.SrcAzureAccess, State: "missing", Detail: detail})
+		if a := find(t, Run(s, db(t), demoCfg(t), true), "Azure"); a.Fix != want {
+			t.Errorf("%q: fix %q, want %q", detail, a.Fix, want)
+		}
+	}
+}
+
+func TestDoctorFirewallNoAccessFix(t *testing.T) {
+	s, _ := fixtures.Demo()
+	for i := range s.Sources {
+		if s.Sources[i].ID == model.SrcFirewall {
+			s.Sources[i].State, s.Sources[i].Detail = "missing", "no access to workspace …000a (needs Log Analytics Reader)"
+		}
+	}
+	if fw := find(t, Run(s, db(t), demoCfg(t), true), "Firewall logs"); fw.Fix != "grant Log Analytics Reader on the workspace (docs/setup.md#roles)" {
+		t.Errorf("fix %q", fw.Fix)
+	}
+}
