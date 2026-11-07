@@ -32,7 +32,8 @@ rules:
     resources: ["networkpolicies", "globalnetworkpolicies"]
     verbs: ["get", "list", "watch"]
   # Optional: CoreDNS config, used to check whether DNS query logging is enabled.
-  # Limited to two named ConfigMaps in kube-system (use a Role there to narrow further).
+  # A ClusterRole cannot pin a namespace: this grants get on ConfigMaps with these two
+  # names in every namespace. For a tighter grant, move this rule to a Role in kube-system.
   - apiGroups: [""]
     resources: ["configmaps"]
     resourceNames: ["coredns-custom", "coredns"]
