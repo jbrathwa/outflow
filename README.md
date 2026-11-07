@@ -110,3 +110,7 @@ cloud, CDN and GeoIP ranges, enough for the demo and for tests. It is not a
 complete database.
 
 IP to Country Lite data by DB-IP (https://db-ip.com), licensed under CC BY 4.0.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The embedded DB-IP data is licensed separately under CC BY 4.0 (see above).
