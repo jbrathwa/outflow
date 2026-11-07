@@ -108,7 +108,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 
 	snat := c.CNI == "azure-cni-overlay" || c.CNI == "kubenet"
 
-	api := fromSource("k8s-api", "Kubernetes API", "", "no workloads, policies or pods can be read",
+	api := fromSource(model.SrcK8sAPI, "Kubernetes API", "", "no workloads, policies or pods can be read",
 		"check your kubeconfig context and that it has read access to pods, nodes and networkpolicies")
 	api.Required = true
 
@@ -155,13 +155,13 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 		outbound.Fix = "route outbound traffic through a firewall (outboundType userDefinedRouting)"
 	}
 
-	fw := fromSource("firewall-logs", "Firewall logs", "", "what actually left the cluster",
+	fw := fromSource(model.SrcFirewall, "Firewall logs", "", "what actually left the cluster",
 		"send firewall logs to the Log Analytics workspace (resource-specific tables)")
-	plug := fromSource("coredns-log-plugin", "CoreDNS query logs", "", dnsWithout, corednsFix)
-	coll := fromSource("coredns-logs-collected", "Log collection", "", dnsWithout,
+	plug := fromSource(model.SrcCoreDNSPlugin, "CoreDNS query logs", "", dnsWithout, corednsFix)
+	coll := fromSource(model.SrcCoreDNSCollected, "Log collection", "", dnsWithout,
 		"include kube-system in the Container Insights data collection rule")
 	plug.Required, coll.Required = snat, snat
-	pods := fromSource("pod-inventory", "Pod inventory", "", "pod IPs cannot be mapped to workloads over time",
+	pods := fromSource(model.SrcPodInventory, "Pod inventory", "", "pod IPs cannot be mapped to workloads over time",
 		"enable Container Insights so KubePodInventory is collected")
 
 	// Required: K8s API plus at least one traffic source; when the CNI

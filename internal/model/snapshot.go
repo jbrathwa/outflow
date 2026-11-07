@@ -38,6 +38,7 @@ type Cluster struct {
 	PodCIDRs          []string `json:"podCidrs"`
 	ServiceCIDRs      []string `json:"serviceCidrs"`
 	NodeLocalDNS      bool     `json:"nodeLocalDns"`
+	AKSLocalDNS       bool     `json:"aksLocalDns,omitempty"`
 	CalicoCRDPolicies int      `json:"calicoCrdPolicies"`
 }
 
@@ -151,11 +152,25 @@ type EgressEvent struct {
 // Resolution maps a domain to the IPs it resolved to.
 // Source is "outflow" or "firewall".
 type Resolution struct {
-	Domain string    `json:"domain"`
-	IPs    []string  `json:"ips"`
-	Source string    `json:"source"`
-	At     time.Time `json:"at"`
+	Domain   string    `json:"domain"`
+	IPs      []string  `json:"ips"`
+	Source   string    `json:"source"`
+	Resolver string    `json:"resolver,omitempty"`
+	At       time.Time `json:"at"`
 }
+
+// Source IDs used in SourceStatus.ID.
+const (
+	SrcK8sAPI           = "k8s-api"
+	SrcK8sAccess        = "k8s-access"
+	SrcFirewall         = "firewall-logs"
+	SrcCoreDNSPlugin    = "coredns-log-plugin"
+	SrcCoreDNSCollected = "coredns-logs-collected"
+	SrcCoreDNSFormat    = "coredns-log-format"
+	SrcPodInventory     = "pod-inventory"
+	SrcAKS              = "aks-resource"
+	SrcAzureAccess      = "azure-access"
+)
 
 // SourceStatus reports the health of one data source.
 // State is "ok", "warn" or "missing".
