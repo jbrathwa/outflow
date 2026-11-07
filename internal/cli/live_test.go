@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/jbrathwa/outflow/internal/collect/azure"
 	"github.com/jbrathwa/outflow/internal/collect/azure/lafake"
 	"github.com/jbrathwa/outflow/internal/collect/k8s"
+	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/model"
 )
@@ -357,5 +359,36 @@ func TestAzureTokenFailureShowsSignInHint(t *testing.T) {
 		if code != 1 || stdout != "" || stderr != want || ft.calls != 1 {
 			t.Errorf("%s: code=%d calls=%d stdout=%q stderr=%q", cmd, code, ft.calls, stdout, stderr)
 		}
+	}
+}
+
+type blockingTokens struct{}
+
+func (blockingTokens) Token(ctx context.Context, _ string) (string, error) {
+	<-ctx.Done()
+	return "", errors.New("DefaultAzureCredential: context canceled\nmore detail")
+}
+
+func TestTokenFetchInterruptedIsNotASignInError(t *testing.T) {
+	withLive(t, aksState("AKS"), false)
+	deps.tokens = func() (azure.TokenSource, error) { return blockingTokens{}, nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // as if Ctrl-C arrived during the token fetch
+	c := &common{profile: "azure"}
+	l, err := c.newLive(ctx, config.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = l.col.Platform(model.Cluster{Platform: "AKS"}, nil)
+	if got := liveMessage(fmt.Errorf("select platform: %w", err)); got != "interrupted" {
+		t.Fatalf("message %q", got)
+	}
+}
+
+func TestSignInMessageKeepsFirstLine(t *testing.T) {
+	err := &signInError{errors.New("DefaultAzureCredential: failed to acquire a token.\nAttempted credentials:\n\tEnvironmentCredential: missing")}
+	want := "azure sign-in: DefaultAzureCredential: failed to acquire a token. (run az login, or set up workload identity in CI)"
+	if got := liveMessage(err); got != want {
+		t.Fatalf("got %q", got)
 	}
 }

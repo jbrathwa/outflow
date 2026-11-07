@@ -40,11 +40,19 @@ type signInError struct{ err error }
 func (e *signInError) Error() string { return "azure sign-in: " + e.err.Error() }
 func (e *signInError) Unwrap() error { return e.err }
 
+// errInterrupted is a run cancelled by Ctrl-C before collection finished.
+var errInterrupted = errors.New("interrupted")
+
 // liveMessage renders a live-collection error for "outflow: <msg>".
 func liveMessage(err error) string {
+	if errors.Is(err, errInterrupted) {
+		return errInterrupted.Error()
+	}
 	var se *signInError
 	if errors.As(err, &se) {
-		return fmt.Sprintf("azure sign-in: %v (run az login, or set up workload identity in CI)", se.err)
+		// azidentity errors list every credential tried over many lines; keep the summary.
+		first, _, _ := strings.Cut(se.err.Error(), "\n")
+		return fmt.Sprintf("azure sign-in: %s (run az login, or set up workload identity in CI)", strings.TrimSpace(first))
 	}
 	return err.Error()
 }
@@ -124,6 +132,9 @@ func (c *common) newLive(ctx context.Context, cfg config.Config) (*live, error) 
 		tctx, cancel := context.WithTimeout(ctx, signInTimeout)
 		defer cancel()
 		if _, err := tokens.Token(tctx, azure.ScopeLogAnalytics); err != nil {
+			if ctx.Err() != nil {
+				return collect.Platform{}, errInterrupted
+			}
 			return collect.Platform{}, &signInError{err}
 		}
 		return azure.NewPlatform(azure.Config{Sources: sources, Tokens: tokens, LAEndpoint: laURL, ARMEndpoint: armURL}), nil
