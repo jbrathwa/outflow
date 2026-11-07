@@ -3,6 +3,8 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -341,5 +343,33 @@ func TestBuildSaaSAndJSON(t *testing.T) {
 		if !strings.Contains(string(b), k) {
 			t.Errorf("json missing %s: %s", k, b)
 		}
+	}
+}
+
+func loadSnap(t *testing.T, name string) model.Snapshot {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s model.Snapshot
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// A hostNetwork lookup from a node IP with no firewall match is DNS only: unknown, not outside.
+func TestBuildNodeLookupWithoutFirewallIsUnknown(t *testing.T) {
+	r := Build(loadSnap(t, "node-lookup-no-firewall.json"), seedDB(t), rule("warn", "US"))
+	n := row(t, r, "(node) n1")
+	if len(n.Destinations) != 1 {
+		t.Fatalf("node destinations = %+v", n.Destinations)
+	}
+	if d := n.Destinations[0]; d.Evidence != DNSOnly || !d.NodeLevel || d.Status != Unknown {
+		t.Errorf("node lookup = evidence %q nodeLevel %v status %q, want DNS only, node-level row, unknown", d.Evidence, d.NodeLevel, d.Status)
+	}
+	if n.Status != Unknown || r.Counts.Outside != 0 {
+		t.Errorf("node status %q, outside count %d; want unknown, 0", n.Status, r.Counts.Outside)
 	}
 }

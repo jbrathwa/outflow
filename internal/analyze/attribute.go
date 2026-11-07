@@ -17,7 +17,7 @@ const (
 	Confirmed Evidence = "confirmed"  // exactly one subject looked the domain up on that node
 	Likely    Evidence = "likely"     // several subjects on that node looked it up
 	DNSOnly   Evidence = "DNS only"   // looked up, but no firewall event joined
-	NodeLevel Evidence = "node-level" // only the node is known (hostNetwork or no lookup)
+	NodeLevel Evidence = "node-level" // firewall traffic tied only to a node (hostNetwork lookup or none)
 )
 
 // JoinBins is how many one-minute bins after a lookup a firewall event may still join it.
@@ -85,9 +85,8 @@ func Attribute(s model.Snapshot) []Observation {
 		if ips := res[l.Domain]; len(ips) > 0 {
 			o.IP, o.IPSource = ips[0], "outflow"
 		}
-		if l.nodeLevel {
-			o.Evidence = NodeLevel
-		}
+		// A node-IP (hostNetwork) lookup with no firewall match stays on the node row
+		// but is DNS only: nothing shows that traffic left.
 		obs = append(obs, o)
 	}
 	return merge(obs)

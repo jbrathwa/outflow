@@ -1,0 +1,8 @@
+{"schemaVersion":1,"cluster":{"name":"c","podCidrs":["10.244.0.0/16"]},
+"window":{"start":"2026-11-06T00:00:00Z","end":"2026-11-07T00:00:00Z"},
+"workloads":[{"namespace":"m","name":"ne","kind":"DaemonSet","labels":{},"hostNetwork":true}],
+"nodes":[{"name":"n1","ips":["10.224.0.4"]}],
+"dnsLookups":[{"podIp":"10.224.0.4","domain":"stledgerweu.blob.core.windows.net","bin":"2026-11-06T10:00:00Z","count":5},
+{"podIp":"10.244.9.9","domain":"stledgerweu.blob.core.windows.net","bin":"2026-11-06T10:00:00Z","count":2}],
+"resolutions":[{"domain":"stledgerweu.blob.core.windows.net","ips":["20.60.40.4"],"source":"outflow"}],
+"sources":[]}

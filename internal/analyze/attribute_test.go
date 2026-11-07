@@ -140,15 +140,15 @@ func TestAttributeHostNetworkLookupFromNodeIP(t *testing.T) {
 	obs := Attribute(s)
 	requireLen(t, obs, 2)
 	for _, o := range obs {
-		if o.Subject != "(node) aks-node-1" || !o.NodeLevel || o.Evidence != NodeLevel {
-			t.Errorf("obs = %+v, want node-level for (node) aks-node-1", o)
+		if o.Subject != "(node) aks-node-1" || !o.NodeLevel {
+			t.Errorf("obs = %+v, want the (node) aks-node-1 row", o)
 		}
 	}
-	if obs[0].Domain != "api.stripe.com" || obs[0].Action != "allow" {
-		t.Errorf("obs[0] = %+v, want joined api.stripe.com", obs[0])
+	if obs[0].Domain != "api.stripe.com" || obs[0].Action != "allow" || obs[0].Evidence != NodeLevel {
+		t.Errorf("obs[0] = %+v, want joined api.stripe.com, node-level", obs[0])
 	}
-	if obs[1].Domain != "telemetry.example.com" || obs[1].Action != "" || obs[1].Hits != 2 {
-		t.Errorf("obs[1] = %+v, want unmatched telemetry lookup", obs[1])
+	if obs[1].Domain != "telemetry.example.com" || obs[1].Action != "" || obs[1].Hits != 2 || obs[1].Evidence != DNSOnly {
+		t.Errorf("obs[1] = %+v, want unmatched telemetry lookup, DNS only", obs[1])
 	}
 }
 
@@ -309,5 +309,31 @@ func TestAttributeUnknownPodDowngradesConfirmed(t *testing.T) {
 	}
 	if !reflect.DeepEqual(obs, want) {
 		t.Errorf("obs = %+v\nwant %+v", obs, want)
+	}
+}
+
+// A hostNetwork pod looks DNS up from its node IP. Without a firewall match the
+// lookup proves nothing left, so it is DNS only (still node-level), not node-level evidence.
+func TestAttributeNodeLookupWithoutFirewallIsDNSOnly(t *testing.T) {
+	s := baseSnapshot()
+	s.Resolutions = []model.Resolution{{Domain: "stledgerweu.blob.core.windows.net", IPs: []string{"20.60.40.4"}, Source: "outflow"}}
+	s.DNSLookups = []model.DNSLookup{
+		{PodIP: "10.224.0.4", Domain: "stledgerweu.blob.core.windows.net", Bin: at(0), Count: 5},
+		{PodIP: "10.224.0.5", Domain: "api.stripe.com", Bin: at(0), Count: 1},
+	}
+	s.EgressEvents = []model.EgressEvent{
+		{NodeIP: "10.224.0.5", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 2},
+	}
+	obs := Attribute(s)
+	requireLen(t, obs, 2)
+	want := Observation{
+		Subject: "(node) aks-node-1", NodeLevel: true, Domain: "stledgerweu.blob.core.windows.net",
+		IP: "20.60.40.4", IPSource: "outflow", Evidence: DNSOnly, Hits: 5, LastSeen: at(0),
+	}
+	if !reflect.DeepEqual(obs[0], want) {
+		t.Errorf("unmatched node lookup = %+v\nwant %+v", obs[0], want)
+	}
+	if obs[1].Subject != "(node) aks-node-2" || obs[1].Evidence != NodeLevel || !obs[1].NodeLevel {
+		t.Errorf("matched node lookup = %+v, want node-level", obs[1])
 	}
 }
