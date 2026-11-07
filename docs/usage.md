@@ -116,7 +116,7 @@ Reference:
 | exception `domain` | Matched case-insensitively and ignoring a trailing dot. `*.stripe.com` matches `api.stripe.com` but not `stripe.com` or `evilstripe.com` |
 | `residency.unknown_location` | `warn` (default): unknown destinations are shown and counted as unknown. `fail`: they also fail `--fail-on outside`. `ignore`: they are not counted at all |
 | `sources.dns_workspace`, `sources.pod_inventory_workspace`, `sources.firewall_workspace` | Log Analytics workspace IDs (GUIDs) read by live collection. `--workspace <id>` sets all three at once |
-| `sources.aks_cluster` | ARM resource ID of the AKS cluster, `/subscriptions/<guid>/resourceGroups/<name>/providers/Microsoft.ContainerService/managedClusters/<name>`. Used for ARM checks |
+| `sources.aks_cluster` | ARM resource ID of the AKS cluster, `/subscriptions/<guid>/resourceGroups/<name>/providers/Microsoft.ContainerService/managedClusters/<name>`. Used for ARM checks. When unset, outflow derives it from the default node resource group name (`MC_<group>_<cluster>_<region>`), which needs only Reader on the cluster; otherwise it lists the subscription's clusters, which needs Reader on the subscription |
 
 A config with only `sources` and no `residency` section still runs in neutral mode.
 
