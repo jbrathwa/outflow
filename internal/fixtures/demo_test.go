@@ -169,6 +169,18 @@ func TestDemoExpectedStatuses(t *testing.T) {
 	}
 }
 
+// The headline counts quoted in the README, demo.md and the GIFs.
+func TestDemoCounts(t *testing.T) {
+	want := analyze.Counts{Workloads: 9, Destinations: 19, Countries: 4, Outside: 3, Unknown: 4, Inside: 10}
+	if got := ruledReport(t).Counts; got != want {
+		t.Errorf("ruled counts = %+v, want %+v", got, want)
+	}
+	want = analyze.Counts{Workloads: 9, Destinations: 19, Countries: 4}
+	if got := demoReport(t, config.Config{}).Counts; got != want {
+		t.Errorf("neutral counts = %+v, want %+v", got, want)
+	}
+}
+
 func TestDemoLikely(t *testing.T) {
 	rep := ruledReport(t)
 	pair := map[string]string{
