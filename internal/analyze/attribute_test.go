@@ -357,3 +357,26 @@ func TestAttributeDropsDNSOnlyBesideJoined(t *testing.T) {
 		t.Errorf("obs[1] = %+v, want shop/web DNS only", o)
 	}
 }
+
+func TestAttributeIPSourceFromResolution(t *testing.T) {
+	s := baseSnapshot()
+	s.Resolutions = []model.Resolution{
+		{Domain: "api.stripe.com", IPs: []string{"198.51.100.10"}, Source: "firewall"},
+		{Domain: "files.example.com", IPs: []string{"198.51.100.20"}, Source: "outflow"},
+	}
+	s.DNSLookups = []model.DNSLookup{
+		{PodIP: "10.244.1.5", Domain: "api.stripe.com", Bin: at(0), Count: 1},
+		{PodIP: "10.244.1.5", Domain: "files.example.com", Bin: at(0), Count: 1},
+	}
+	s.EgressEvents = []model.EgressEvent{
+		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "allow", Bin: at(0), Count: 1},
+	}
+	obs := Attribute(s)
+	requireLen(t, obs, 2)
+	if obs[0].IP != "198.51.100.10" || obs[0].IPSource != "firewall log" {
+		t.Errorf("firewall resolution: %+v, want IP source firewall log", obs[0])
+	}
+	if obs[1].IP != "198.51.100.20" || obs[1].IPSource != "outflow" {
+		t.Errorf("outflow resolution: %+v, want IP source outflow", obs[1])
+	}
+}

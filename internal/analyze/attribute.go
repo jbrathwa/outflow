@@ -82,9 +82,7 @@ func Attribute(s model.Snapshot) []Observation {
 			Subject: l.subject, NodeLevel: l.nodeLevel, Domain: l.Domain,
 			Evidence: DNSOnly, Hits: l.Count, LastSeen: l.Bin,
 		}
-		if ips := res[l.Domain]; len(ips) > 0 {
-			o.IP, o.IPSource = ips[0], "outflow"
-		}
+		o.IP, o.IPSource = res.first(l.Domain)
 		// A node-IP (hostNetwork) lookup with no firewall match stays on the node row
 		// but is DNS only: nothing shows that traffic left.
 		obs = append(obs, o)
@@ -107,14 +105,40 @@ func dropShadowedDNSOnly(obs []Observation) []Observation {
 	})
 }
 
-// resolutionIndex maps each normalized domain to the IPs of its resolutions, in input order.
-func resolutionIndex(rs []model.Resolution) map[string][]string {
-	idx := map[string][]string{}
+// resolvedIP is one resolved address and where it came from ("outflow" or "firewall log").
+type resolvedIP struct{ ip, source string }
+
+// resolutions maps each normalized domain to its resolved IPs, in input order.
+type resolutions map[string][]resolvedIP
+
+// resolutionIndex indexes the snapshot's resolutions, labelling each IP's source:
+// snapshot source "firewall" becomes "firewall log", anything else "outflow".
+func resolutionIndex(rs []model.Resolution) resolutions {
+	idx := resolutions{}
 	for _, r := range rs {
 		d := model.NormalizeDomain(r.Domain)
-		idx[d] = append(idx[d], r.IPs...)
+		src := "outflow"
+		if r.Source == "firewall" {
+			src = "firewall log"
+		}
+		for _, ip := range r.IPs {
+			idx[d] = append(idx[d], resolvedIP{ip, src})
+		}
 	}
 	return idx
+}
+
+// first returns a domain's first resolved IP and its source, or "", "".
+func (r resolutions) first(domain string) (string, string) {
+	if ips := r[domain]; len(ips) > 0 {
+		return ips[0].ip, ips[0].source
+	}
+	return "", ""
+}
+
+// has reports whether domain resolved to ip.
+func (r resolutions) has(domain, ip string) bool {
+	return slices.ContainsFunc(r[domain], func(x resolvedIP) bool { return x.ip == ip })
 }
 
 // resolveLookups finds the subject of each lookup: the node for a node IP, otherwise
@@ -150,7 +174,7 @@ func alive(p model.Pod, t time.Time) bool {
 func nodeSubject(node string) string { return "(node) " + node }
 
 // attributeEvent turns one firewall event into observations for its candidate subjects.
-func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res map[string][]string) []Observation {
+func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res resolutions) []Observation {
 	domain := model.NormalizeDomain(e.Domain)
 	var cands []candidate
 	seen := map[string]bool{}
@@ -162,7 +186,7 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res map
 			if l.Domain != domain {
 				continue
 			}
-		} else if e.DestIP == "" || !slices.Contains(res[l.Domain], e.DestIP) {
+		} else if e.DestIP == "" || !res.has(l.Domain, e.DestIP) {
 			continue
 		}
 		l.matched = true
@@ -226,14 +250,11 @@ func inWindow(lookupBin, eventBin time.Time) bool {
 	return !eventBin.Before(lookupBin) && !eventBin.After(lookupBin.Add(JoinBins*time.Minute))
 }
 
-func eventIP(e model.EgressEvent, domain string, res map[string][]string) (string, string) {
+func eventIP(e model.EgressEvent, domain string, res resolutions) (string, string) {
 	if e.DestIP != "" {
 		return e.DestIP, "firewall log"
 	}
-	if ips := res[domain]; len(ips) > 0 {
-		return ips[0], "outflow"
-	}
-	return "", ""
+	return res.first(domain)
 }
 
 type mergeKey struct {
