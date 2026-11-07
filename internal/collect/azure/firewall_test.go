@@ -285,3 +285,22 @@ func TestProbeNoNodeIPsWarns(t *testing.T) {
 		}
 	}
 }
+
+func TestEventsEmptyDestinationAndBadLegacyActionUnreadable(t *testing.T) {
+	s := fwServer(t, [][]any{{"app", fwRID}}, [][]any{
+		{"10.224.0.4", "", float64(443), "HTTPS", "Allow", "r", "2026-11-07T09:01:00Z", float64(1), fwRID},
+		{"10.224.0.4", "a.example", float64(443), "HTTPS", "Allow", "r", "2026-11-07T09:01:00Z", float64(1), fwRID},
+	}, nil, nil)
+	evs, _, st := fwSource(s.URL, fwWS).Events(context.Background(), fwScope())
+	if len(evs) != 1 || st.State != "warn" || !strings.HasSuffix(st.Detail, "(1 rows unreadable)") {
+		t.Fatalf("app: %+v %+v", evs, st)
+	}
+	s = fwServer(t, [][]any{{"legacy", fwRID}}, nil, nil, [][]any{
+		{"10.224.0.4", "api.example.com", "443", "HTTPS", "", "r", "2026-11-07T09:01:00Z", float64(4), fwRID},
+		{"10.224.0.4", "api.example.com", "443", "HTTPS", "Allow", "r", "2026-11-07T09:01:00Z", float64(4), fwRID},
+	})
+	evs, _, st = fwSource(s.URL, fwWS).Events(context.Background(), fwScope())
+	if len(evs) != 1 || !strings.HasSuffix(st.Detail, "(1 rows unreadable)") {
+		t.Fatalf("legacy: %+v %+v", evs, st)
+	}
+}

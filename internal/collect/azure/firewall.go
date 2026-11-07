@@ -216,7 +216,7 @@ func (f *FirewallSource) Events(ctx context.Context, sc collect.Scope) ([]model.
 		rows += len(t.Rows)
 		cols := fwCols{
 			src: t.Col("SourceIp"), dest: t.Col(q.destCo), port: t.Col("DestinationPort"), proto: t.Col("Protocol"),
-			action: t.Col("Action"), rule: t.Col("Rule"), bin: t.Col("bin"), cnt: t.Col("count"), rid: t.Col("_ResourceId"), destIsName: q.name != "fw-net",
+			action: t.Col("Action"), rule: t.Col("Rule"), bin: t.Col("bin"), cnt: t.Col("count"), rid: t.Col("_ResourceId"), destIsName: q.name != "fw-net", legacy: legacy,
 		}
 		if len(t.Rows) > 0 && (cols.src < 0 || cols.dest < 0 || cols.port < 0 || cols.bin < 0 || cols.cnt < 0) {
 			return nil, "", model.SourceStatus{ID: model.SrcFirewall, State: "warn", Detail: "unexpected result columns"}
@@ -264,6 +264,7 @@ func (f *FirewallSource) Events(ctx context.Context, sc collect.Scope) ([]model.
 type fwCols struct {
 	src, dest, port, proto, action, rule, bin, cnt, rid int
 	destIsName                                          bool // Fqdn or legacy Destination, not DestinationIp
+	legacy                                              bool // parsed from AzureDiagnostics msg_s
 }
 
 func (c fwCols) event(r []any) (model.EgressEvent, string, bool) {
@@ -307,11 +308,18 @@ func (c fwCols) event(r []any) (model.EgressEvent, string, bool) {
 		NodeIP: src, Protocol: strings.ToUpper(strings.TrimSpace(proto)), Port: port,
 		Action: strings.ToLower(strings.TrimSpace(action)), Rule: strings.TrimSpace(rule), Bin: bt.UTC(), Count: cnt,
 	}
+	// A legacy line whose Action did not parse may be either verdict: do not guess.
+	if c.legacy && ev.Action == "" {
+		return model.EgressEvent{}, "", false
+	}
 	dest = strings.TrimSpace(dest)
 	if _, err := netip.ParseAddr(dest); err == nil || !c.destIsName {
 		ev.DestIP = dest
 	} else {
 		ev.Domain = model.NormalizeDomain(dest)
+	}
+	if ev.DestIP == "" && ev.Domain == "" {
+		return model.EgressEvent{}, "", false
 	}
 	return ev, rid, true
 }
