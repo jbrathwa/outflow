@@ -156,3 +156,10 @@ func TestQueryDebugHasNoData(t *testing.T) {
 		}
 	}
 }
+
+func TestClientTimeoutOutlastsServerWait(t *testing.T) {
+	// The request asks the service to wait up to 180s; the client must wait longer.
+	if got := azure.NewLogAnalytics(azure.StaticToken("t")).Timeout; got != 3*time.Minute+30*time.Second {
+		t.Fatalf("timeout %v", got)
+	}
+}

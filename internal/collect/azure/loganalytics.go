@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,9 +70,10 @@ type LogAnalytics struct {
 	OnResult func(workspace string, status int)
 }
 
-// NewLogAnalytics returns a client for the public cloud endpoint.
+// NewLogAnalytics returns a client for the public cloud endpoint. The timeout outlasts the
+// 180s server-side wait the request asks for (Prefer: wait=180).
 func NewLogAnalytics(t TokenSource) *LogAnalytics {
-	return &LogAnalytics{Endpoint: "https://api.loganalytics.io/v1", Tokens: t, HTTP: &http.Client{}, Timeout: 3 * time.Minute}
+	return &LogAnalytics{Endpoint: "https://api.loganalytics.io/v1", Tokens: t, HTTP: &http.Client{}, Timeout: 3*time.Minute + 30*time.Second}
 }
 
 type errPayload struct {
@@ -188,8 +190,8 @@ func (c *LogAnalytics) QuerySplit(ctx context.Context, name, workspace string, k
 			out.Rows = append(out.Rows, t.Rows...)
 			return nil
 		}
-		qe, ok := err.(*QueryError)
-		if !ok || !qe.TooLarge() {
+		var qe *QueryError
+		if !errors.As(err, &qe) || !qe.TooLarge() {
 			return err
 		}
 		mid := w.Start.Add(w.End.Sub(w.Start) / 2).Truncate(time.Minute)
