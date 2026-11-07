@@ -31,14 +31,26 @@ func dnsFilter(w model.Window, nodes []string) string {
 		`| where PodNamespace == "kube-system" and ContainerName == "coredns" and Computer in (` + kqlStrings(nodes) + ")\n"
 }
 
+// internalSuffixes are cluster, node and reverse-lookup name suffixes: never internet
+// destinations. The lookups KQL and externalName both use this list.
+var internalSuffixes = []string{".cluster.local", ".svc", ".local", ".internal", ".internal.cloudapp.net", ".in-addr.arpa", ".ip6.arpa"}
+
+// lookupTypes are the query types that resolve a name to an address.
+var lookupTypes = []string{"A", "AAAA", "HTTPS"}
+
 func dnsLookupsKQL(w model.Window, nodes []string) string {
+	excl := make([]string, len(internalSuffixes))
+	for i, s := range internalSuffixes {
+		excl[i] = "domain !endswith " + kqlStrings([]string{s})
+	}
 	return dnsFilter(w, nodes) +
 		"| extend line = tostring(LogMessage)\n" +
 		`| parse line with * "] " client " - " * "\"" qtype " IN " qname " " * "\" " rcode " " *` + "\n" +
 		`| where rcode == "NOERROR" and isnotempty(qname)` + "\n" +
+		"| where qtype in (" + kqlStrings(lookupTypes) + ")\n" +
 		`| extend podIp = trim(@"[\[\]]", tostring(extract(@"^(.*):\d+$", 1, client)))` + "\n" +
 		`| extend domain = tolower(trim_end(@"\.", qname))` + "\n" +
-		`| where domain !endswith ".cluster.local" and domain !endswith ".svc" and domain !endswith ".internal.cloudapp.net" and domain contains "."` + "\n" +
+		"| where " + strings.Join(excl, " and ") + ` and domain contains "."` + "\n" +
 		"| summarize count = count() by podIp, domain, bin = bin(TimeGenerated, 1m)"
 }
 
@@ -269,7 +281,7 @@ func externalName(qname string) bool {
 	if !strings.Contains(q, ".") {
 		return false
 	}
-	for _, suf := range []string{".cluster.local", ".svc", ".local", ".internal", ".internal.cloudapp.net", ".in-addr.arpa", ".ip6.arpa"} {
+	for _, suf := range internalSuffixes {
 		if strings.HasSuffix(q, suf) {
 			return false
 		}

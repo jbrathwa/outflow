@@ -301,3 +301,24 @@ func TestProbeNoTable(t *testing.T) {
 		}
 	}
 }
+
+func TestDNSQueryExcludesInternalNamesAndRecordTypes(t *testing.T) {
+	s := lookupsServer(t, nil, "", 0)
+	dnsSource(s.URL, dnsWS).Lookups(context.Background(), dnsScope())
+	k := s.Calls()[0].KQL
+	for _, suf := range internalSuffixes {
+		if !strings.Contains(k, `domain !endswith "`+suf+`"`) {
+			t.Errorf("KQL lacks exclusion %s:\n%s", suf, k)
+		}
+	}
+	for _, want := range []string{".in-addr.arpa", ".ip6.arpa", `| where qtype in ("A", "AAAA", "HTTPS")`} {
+		if !strings.Contains(k, want) {
+			t.Errorf("KQL missing %s:\n%s", want, k)
+		}
+	}
+	for _, ptr := range []string{"4.0.224.10.in-addr.arpa.", "b.a.9.8.7.6.5.0.4.0.0.0.3.0.0.0.2.0.0.0.1.0.0.0.0.0.0.0.1.2.3.4.ip6.arpa"} {
+		if externalName(ptr) {
+			t.Errorf("%s accepted as external", ptr)
+		}
+	}
+}
