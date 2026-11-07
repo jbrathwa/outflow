@@ -175,7 +175,7 @@ config, missing sources, partial coverage). Treat both as failures.
 Residency and Access. Each line is `✔` (ok), `!` (degrades coverage), `✖`
 (missing) or `·` (informational). Missing items include why it matters, what you
 lose without it, and a fix. It ends with the coverage verdict and what outflow can
-and cannot answer. See [the demo walkthrough](demo.md#doctor-on-a-degraded-cluster)
+and cannot answer. The fix steps are in [the setup guide](setup.md). See [the demo walkthrough](demo.md#doctor-on-a-degraded-cluster)
 for real output.
 
 ## Location data
