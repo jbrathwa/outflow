@@ -11,10 +11,6 @@ tells you how sure it is.
 
 ![outflow TUI on the built-in demo data](docs/img/demo.gif)
 
-> **Status:** live collection for AKS is in progress; demo and snapshot modes
-> work today. Running outflow without `--demo` or `--snapshot` exits with an
-> error saying so.
-
 ## Install
 
 **macOS (Homebrew)**
@@ -68,10 +64,11 @@ same facts with no pass/fail judgement.
 | `outflow` | Interactive view (TUI) |
 | `outflow scan` | Same analysis without the TUI. JSON by default (`--json`), `--format md` for a CI job summary. `--fail-on` sets the exit code |
 | `outflow doctor` | Checks every data source outflow needs and reports coverage as `FULL`, `PARTIAL` or `NONE` |
+| `outflow snapshot -o <file>` | Collects live data into a snapshot JSON file for offline use |
 | `outflow version` | Prints the version |
 
 Common flags: `--demo`, `--demo-rule`, `--snapshot <file>`, `--dump-demo`,
-`--config <file>`. `scan` adds `--format json|md` (`--json` is short for `--format json`), `--fail-on outside|unknown`
+`--config <file>`, `--context`, `--profile`, `--since`, `--workspace`, `--join-window`, `--debug`. `scan` adds `--format json|md` (`--json` is short for `--format json`), `--fail-on outside|unknown`
 and `--allow-partial`. Every flag, the exit codes and the `outflow.yaml`
 reference are in the [usage guide](docs/usage.md).
 
