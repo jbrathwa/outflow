@@ -3,3 +3,6 @@ docs/superpowers/
 
 # Brainstorm mockups (local only)
 .superpowers/
+
+# Built binary
+/outflow
