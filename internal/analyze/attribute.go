@@ -25,17 +25,17 @@ const JoinBins = 1
 
 // Observation is one subject reaching one destination on one port with one action.
 type Observation struct {
-	Subject    string // workload ID, "(node) <name>", or "unknown pod (<ip>)"
-	NodeLevel  bool
-	Domain     string
-	IP         string
-	IPSource   string // "outflow" | "firewall log" | ""
-	Port       int
-	Action     string // "allow" | "deny" | "" (DNS only)
-	Evidence   Evidence
-	Hits       int
-	LastSeen   time.Time
-	AlsoLikely []string
+	Subject    string    `json:"subject"` // workload ID, "(node) <name>", or "unknown pod (<ip>)"
+	NodeLevel  bool      `json:"nodeLevel"`
+	Domain     string    `json:"domain"`
+	IP         string    `json:"ip"`
+	IPSource   string    `json:"ipSource"` // "outflow" | "firewall log" | ""
+	Port       int       `json:"port"`
+	Action     string    `json:"action"` // "allow" | "deny" | "" (DNS only)
+	Evidence   Evidence  `json:"evidence"`
+	Hits       int       `json:"hits"`
+	LastSeen   time.Time `json:"lastSeen"`
+	AlsoLikely []string  `json:"alsoLikely"`
 }
 
 // lookup is a DNS lookup resolved to its subject.
