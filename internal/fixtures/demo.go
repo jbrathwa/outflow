@@ -39,9 +39,9 @@ func DemoDegraded() model.Snapshot {
 	s.DNSLookups = []model.DNSLookup{}
 	for i, src := range s.Sources {
 		switch src.ID {
-		case "coredns-log-plugin":
+		case model.SrcCoreDNSPlugin:
 			s.Sources[i] = model.SourceStatus{ID: src.ID, State: "missing", Detail: "log plugin not enabled in coredns-custom"}
-		case "coredns-logs-collected":
+		case model.SrcCoreDNSCollected:
 			s.Sources[i] = model.SourceStatus{ID: src.ID, State: "missing", Detail: "no CoreDNS query lines in ContainerLogV2"}
 		}
 	}

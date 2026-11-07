@@ -69,8 +69,10 @@ func (r Result) Failed() bool {
 }
 
 const (
-	corednsFix = "add `log` to the coredns-custom ConfigMap (docs/setup.md#coredns)"
-	dnsWithout = "destinations only per node, not per workload"
+	laReaderFix  = "grant Log Analytics Reader on the workspace (docs/setup.md#roles)"
+	aksReaderFix = "grant Reader on the AKS resource (docs/setup.md#roles)"
+	corednsFix   = "add `log` to the coredns-custom ConfigMap (docs/setup.md#coredns)"
+	dnsWithout   = "destinations only per node, not per workload"
 )
 
 // Run evaluates the snapshot against outflow's data-source needs.
@@ -108,7 +110,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 
 	snat := c.CNI == "azure-cni-overlay" || c.CNI == "kubenet"
 
-	api := fromSource("k8s-api", "Kubernetes API", "", "no workloads, policies or pods can be read",
+	api := fromSource(model.SrcK8sAPI, "Kubernetes API", "", "no workloads, policies or pods can be read",
 		"check your kubeconfig context and that it has read access to pods, nodes and networkpolicies")
 	api.Required = true
 
@@ -142,41 +144,61 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	}
 
 	outbound := Check{Name: "Outbound path", State: OK, Detail: c.OutboundType}
-	if c.OutboundType == "userDefinedRouting" {
+	switch c.OutboundType {
+	case "userDefinedRouting":
 		if c.Firewall != "" {
 			outbound.Detail += " → Azure Firewall " + c.Firewall
 		}
-	} else {
-		outbound.State = Warn
-		if c.OutboundType == "" {
-			outbound.Detail = "unknown"
+	case "":
+		// Never read: say so rather than implying the path skips a firewall.
+		outbound.State, outbound.Detail = Warn, "not checked"
+		if c.Platform == "AKS" {
+			outbound.Detail = "not checked (AKS resource not read)"
 		}
+	default:
+		outbound.State = Warn
 		outbound.Without = "egress is not forced through a firewall, so there are no firewall logs to read"
 		outbound.Fix = "route outbound traffic through a firewall (outboundType userDefinedRouting)"
 	}
 
-	fw := fromSource("firewall-logs", "Firewall logs", "", "what actually left the cluster",
+	fw := fromSource(model.SrcFirewall, "Firewall logs", "", "what actually left the cluster",
 		"send firewall logs to the Log Analytics workspace (resource-specific tables)")
-	plug := fromSource("coredns-log-plugin", "CoreDNS query logs", "", dnsWithout, corednsFix)
-	coll := fromSource("coredns-logs-collected", "Log collection", "", dnsWithout,
+	if strings.HasPrefix(fw.Detail, "no access to workspace") {
+		fw.Fix = laReaderFix
+	}
+	plug := fromSource(model.SrcCoreDNSPlugin, "CoreDNS query logs", "", dnsWithout, corednsFix)
+	coll := fromSource(model.SrcCoreDNSCollected, "Log collection", "", dnsWithout,
 		"include kube-system in the Container Insights data collection rule")
 	plug.Required, coll.Required = snat, snat
-	pods := fromSource("pod-inventory", "Pod inventory", "", "pod IPs cannot be mapped to workloads over time",
+	pods := fromSource(model.SrcPodInventory, "Pod inventory", "", "pod IPs cannot be mapped to workloads over time",
 		"enable Container Insights so KubePodInventory is collected")
 
 	// Required: K8s API plus at least one traffic source; when the CNI
 	// SNATs pod traffic the DNS checks are mandatory (set above), and so is
-	// the absence of NodeLocal DNS (below). A source
+	// the absence of a local DNS cache (below). A source
 	// is available when ok or warn, so only fail trips Failed().
 	dnsAvail := available(plug.State) && available(coll.State)
 	if !snat && !available(fw.State) && !dnsAvail {
 		fw.Required, plug.Required, coll.Required = true, true, true
 	}
 
-	traffic := []Check{outbound, fw, plug, coll, pods}
-	if c.NodeLocalDNS {
-		traffic = append(traffic, Check{Name: "NodeLocal DNS", State: Fail, Detail: "workload attribution unavailable",
-			Why:     "NodeLocal DNS Cache hides which pod sent each query from CoreDNS logs",
+	traffic := []Check{outbound, fw, plug, coll}
+	if _, ok := src(model.SrcCoreDNSFormat); ok {
+		traffic = append(traffic, fromSource(model.SrcCoreDNSFormat, "CoreDNS log format", "",
+			"some CoreDNS lines may be missed", "check the CoreDNS log format"))
+	}
+	traffic = append(traffic, pods)
+	localDNS := c.NodeLocalDNS || c.AKSLocalDNS
+	if localDNS {
+		var found []string
+		if c.NodeLocalDNS {
+			found = append(found, "NodeLocal DNSCache found")
+		}
+		if c.AKSLocalDNS {
+			found = append(found, "AKS LocalDNS enabled")
+		}
+		traffic = append(traffic, Check{Name: "Local DNS cache", State: Fail, Detail: strings.Join(found, " · "),
+			Why:     "a node-local DNS cache hides which pod sent each query from CoreDNS logs",
 			Without: dnsWithout, Required: snat})
 	}
 
@@ -201,24 +223,65 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 		res = Check{Name: "Rule", State: OK, Detail: "outflow.yaml · " + ruleSummary(cfg.Residency)}
 	}
 
-	profile := "generic"
-	if c.Platform == "AKS" {
-		profile = "azure"
+	// The profile collection used; older snapshots lack it, so derive it from the platform.
+	profile := s.Profile
+	if profile == "" {
+		profile = "generic"
+		if c.Platform == "AKS" {
+			profile = "azure"
+		}
+	}
+
+	clusterChecks := []Check{api, platform, cni, policy}
+	if _, ok := src(model.SrcAKS); ok {
+		clusterChecks = append(clusterChecks, fromSource(model.SrcAKS, "AKS resource", "",
+			"AKS settings (outbound type, LocalDNS) are not read from Azure",
+			aksReaderFix))
 	}
 
 	r := Result{
 		Profile: profile,
 		Context: c.Context,
 		Groups: []Group{
-			{Name: "Cluster", Checks: []Check{api, platform, cni, policy}},
+			{Name: "Cluster", Checks: clusterChecks},
 			{Name: "Traffic", Checks: traffic},
 			{Name: "Location", Checks: loc},
 			{Name: "Residency", Checks: []Check{res}},
-			{Name: "Access", Checks: []Check{{State: Info, Detail: "checked in live mode"}}},
+			{Name: "Access", Checks: accessChecks(src, fromSource)},
 		},
 	}
-	r.Coverage = coverage(traffic, available(fw.State), dnsAvail, c.NodeLocalDNS)
+	r.Coverage = coverage(traffic, available(fw.State), dnsAvail, localDNS)
 	return r
+}
+
+// accessChecks builds the Access group: one check per live access source,
+// or a single info line for demo and snapshot data that carries none.
+func accessChecks(src func(string) (model.SourceStatus, bool),
+	fromSource func(id, name, why, without, fix string) Check) []Check {
+	_, k8s := src(model.SrcK8sAccess)
+	_, az := src(model.SrcAzureAccess)
+	if !k8s && !az {
+		return []Check{{State: Info, Detail: "checked in live mode"}}
+	}
+	notChecked := func(name string) Check { return Check{Name: name, State: Info, Detail: "not checked"} }
+	kc, ac := notChecked("Kubernetes"), notChecked("Azure")
+	if k8s {
+		kc = fromSource(model.SrcK8sAccess, "Kubernetes", "", "some cluster data cannot be read",
+			"apply deploy/clusterrole.yaml (docs/usage.md#permissions)")
+		kc.Required = true
+	}
+	if az {
+		ac = fromSource(model.SrcAzureAccess, "Azure", "", "no firewall or DNS logs can be queried", laReaderFix)
+		// Name the role the detail says is missing: Reader on the AKS resource, Log Analytics
+		// Reader on workspaces, or both.
+		if ac.Fix != "" && strings.Contains(ac.Detail, "AKS resource") {
+			ac.Fix = aksReaderFix
+			if strings.Contains(ac.Detail, "workspace") {
+				ac.Fix = laReaderFix + "; " + aksReaderFix
+			}
+		}
+	}
+	return []Check{kc, ac}
 }
 
 // available reports whether a source delivers data: ok, or warn (degraded).
@@ -269,8 +332,10 @@ func coverage(traffic []Check, fwOK, dnsOK, nodeLocal bool) Coverage {
 			add("which workload made each call → enable CoreDNS logs")
 		case "Pod inventory":
 			add("workloads for pods that no longer exist → enable Container Insights")
-		case "NodeLocal DNS":
-			add("which workload made each call → NodeLocal DNS hides the client pod")
+		case "CoreDNS log format":
+			add("some CoreDNS lines may be missed → check the CoreDNS log format")
+		case "Local DNS cache":
+			add("which workload made each call → a node-local DNS cache hides the client pod")
 		}
 	}
 	return cv

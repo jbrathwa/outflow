@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -20,6 +21,53 @@ import (
 // Config is the parsed outflow.yaml. Residency is nil when no rule is set.
 type Config struct {
 	Residency *Residency `yaml:"residency"`
+	Sources   Sources    `yaml:"sources"`
+}
+
+// Sources names the Log Analytics workspaces and the AKS cluster that live
+// collection reads. All fields are optional.
+type Sources struct {
+	DNSWorkspace          string `yaml:"dns_workspace"`
+	PodInventoryWorkspace string `yaml:"pod_inventory_workspace"`
+	FirewallWorkspace     string `yaml:"firewall_workspace"`
+	AKSCluster            string `yaml:"aks_cluster"` // ARM resource ID
+}
+
+// WithWorkspace returns s with all three workspaces set to id. An empty id
+// returns s unchanged.
+func (s Sources) WithWorkspace(id string) Sources {
+	if id == "" {
+		return s
+	}
+	s.DNSWorkspace, s.PodInventoryWorkspace, s.FirewallWorkspace = id, id, id
+	return s
+}
+
+var (
+	guidRE = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	aksRE  = regexp.MustCompile(`(?i)^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourceGroups/[^/]+/providers/Microsoft\.ContainerService/managedClusters/[^/]+$`)
+)
+
+func (s *Sources) validate() error {
+	ws := []struct {
+		name string
+		v    *string
+	}{
+		{"dns_workspace", &s.DNSWorkspace},
+		{"pod_inventory_workspace", &s.PodInventoryWorkspace},
+		{"firewall_workspace", &s.FirewallWorkspace},
+	}
+	for _, w := range ws {
+		*w.v = strings.TrimSpace(*w.v)
+		if *w.v != "" && !guidRE.MatchString(*w.v) {
+			return fmt.Errorf("sources.%s: %q is not a Log Analytics workspace ID (a GUID)", w.name, *w.v)
+		}
+	}
+	s.AKSCluster = strings.TrimSpace(s.AKSCluster)
+	if s.AKSCluster != "" && !aksRE.MatchString(s.AKSCluster) {
+		return fmt.Errorf("sources.aks_cluster: %q is not an AKS resource ID (/subscriptions/<guid>/resourceGroups/<name>/providers/Microsoft.ContainerService/managedClusters/<name>)", s.AKSCluster)
+	}
+	return nil
 }
 
 // Residency is the allowed-location rule plus its exceptions.
@@ -82,6 +130,9 @@ func parse(b []byte) (Config, error) {
 		if errors.Is(err, io.EOF) {
 			return Config{}, nil
 		}
+		return Config{}, err
+	}
+	if err := c.Sources.validate(); err != nil {
 		return Config{}, err
 	}
 	if c.Residency == nil {

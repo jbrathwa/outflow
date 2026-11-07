@@ -35,7 +35,7 @@ func WriteMarkdown(w io.Writer, r analyze.Report, cov doctor.Coverage) error {
 				status = string(d.Status)
 			}
 			rows = append(rows, fmt.Sprintf("| %s | %s | %s | %s | %s | %s |", cell(status), cell(wl.ID),
-				cell(dest(d)), cell(locLabel(d.Location)), cell(string(d.Evidence)), action(d)))
+				cell(dest(d)), cell(destLoc(d)), cell(string(d.Evidence)), action(d)))
 		}
 	}
 	first := "Status"
@@ -90,6 +90,15 @@ func action(d analyze.Destination) string {
 		return "—"
 	}
 	return cell(d.Action)
+}
+
+// destLoc is the location cell: the primary location, plus " +N" for other locations.
+func destLoc(d analyze.Destination) string {
+	l := locLabel(d.Location)
+	if n := len(d.OtherLocations); n > 0 {
+		l += fmt.Sprintf(" +%d", n)
+	}
+	return l
 }
 
 func locLabel(l location.Location) string {

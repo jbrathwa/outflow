@@ -1,0 +1,54 @@
+# outflow read-only access. Every rule grants get/list/watch only; outflow never writes to the cluster.
+#
+# Apply with:  kubectl apply -f deploy/clusterrole.yaml
+# Then bind it to your identity (see the commented ClusterRoleBinding at the end).
+#
+# SelfSubjectAccessReview (used by `outflow doctor` to check these permissions) is not listed:
+# every authenticated user already has it through the built-in system:basic-user role, and it
+# only asks about the caller's own permissions.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: outflow-reader
+rules:
+  # Pods, nodes and namespaces: which workloads run where, node IPs/pod CIDRs, namespace labels
+  # for NetworkPolicy selectors.
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  # Controllers: resolve each pod to its owning workload (Deployment via ReplicaSet, etc.).
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # Kubernetes NetworkPolicies: the egress rules outflow analyses.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  # Optional: Calico policy CRDs, used to detect Calico policies outflow cannot evaluate.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources: ["networkpolicies", "globalnetworkpolicies"]
+    verbs: ["get", "list", "watch"]
+  # Optional: CoreDNS config, used to check whether DNS query logging is enabled.
+  # A ClusterRole cannot pin a namespace: this grants get on ConfigMaps with these two
+  # names in every namespace. For a tighter grant, move this rule to a Role in kube-system.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["coredns-custom", "coredns"]
+    verbs: ["get"]
+# Example binding (uncomment and adjust the group):
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: outflow-readers
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: outflow-reader
+# subjects:
+#   - apiGroup: rbac.authorization.k8s.io
+#     kind: Group
+#     name: outflow-readers

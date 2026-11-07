@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +19,10 @@ import (
 )
 
 func init() { lipgloss.SetColorProfile(termenv.Ascii) }
+
+func refreshTo(r analyze.Report) func(context.Context) (analyze.Report, doctor.Level, error) {
+	return func(context.Context) (analyze.Report, doctor.Level, error) { return r, doctor.Full, nil }
+}
 
 func demoReport(t *testing.T, ruled bool) analyze.Report {
 	t.Helper()
@@ -442,18 +448,67 @@ func TestExceptionNoDestination(t *testing.T) {
 	}
 }
 
-func TestRerunCallsFunc(t *testing.T) {
+// runCmd executes a Cmd and feeds its message back into Update.
+func runCmd(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("expected a Cmd")
+	}
+	next, _ := m.Update(cmd())
+	return next.(Model)
+}
+
+func pressR(m Model) (Model, tea.Cmd) {
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	return next.(Model), cmd
+}
+
+func TestRefreshIsAsync(t *testing.T) {
 	rep := demoReport(t, true)
 	calls := 0
+	m := sized(New(rep, func(context.Context) (analyze.Report, doctor.Level, error) {
+		calls++
+		return rep, doctor.Full, nil
+	}), 140, 40)
+	m, cmd := pressR(m)
+	if cmd == nil || calls != 0 {
+		t.Fatalf("r must return a Cmd without calling refresh (cmd=%v calls=%d)", cmd != nil, calls)
+	}
+	if !strings.Contains(m.View(), "refreshing…") {
+		t.Errorf("header should show refreshing…:\n%s", m.View())
+	}
+	m = runCmd(t, m, cmd)
+	if calls != 1 || strings.Contains(m.View(), "refreshing…") {
+		t.Errorf("calls=%d, refreshing should clear:\n%s", calls, m.View())
+	}
+	if _, cmd := pressR(sized(New(rep, nil), 140, 40)); cmd != nil {
+		t.Errorf("nil refresh should be a no-op")
+	}
+}
+
+func TestRefreshIgnoresRepeat(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, refreshTo(rep)), 140, 40)
+	m, first := pressR(m)
+	if first == nil {
+		t.Fatal("first r should start a refresh")
+	}
+	if _, second := pressR(m); second != nil {
+		t.Errorf("r while refreshing should be ignored")
+	}
+}
+
+func TestRefreshSuccessSwapsReport(t *testing.T) {
+	rep := demoReport(t, true)
 	newRep := rep
-	newRep.Workloads = rep.Workloads[1:] // first workload vanished
-	rerun := func() analyze.Report { calls++; return newRep }
-	m := sized(New(rep, rerun), 140, 40)
-	m = press(press(m, tea.KeyDown), tea.KeyDown) // select index 2
+	newRep.Workloads = rep.Workloads[1:]
+	m := sized(New(rep, refreshTo(newRep)), 140, 40)
+	m = press(press(m, tea.KeyDown), tea.KeyDown)
 	id := rep.Workloads[2].ID
-	m = keys(m, "r")
-	if calls != 1 {
-		t.Fatalf("rerun calls = %d", calls)
+	m, cmd := pressR(m)
+	m = runCmd(t, m, cmd)
+	if len(m.report.Workloads) != len(newRep.Workloads) {
+		t.Fatalf("report not swapped")
 	}
 	if m.cursor < 0 || m.cursor >= len(newRep.Workloads) || newRep.Workloads[m.cursor].ID != id {
 		t.Errorf("selection should follow %s, cursor=%d", id, m.cursor)
@@ -461,18 +516,92 @@ func TestRerunCallsFunc(t *testing.T) {
 	// shrink to one row: cursor clamps
 	one := rep
 	one.Workloads = rep.Workloads[:1]
-	m2 := keys(sized(New(rep, func() analyze.Report { return one }), 140, 40), "G")
-	m2 = keys(m2, "r")
+	m2 := keys(sized(New(rep, refreshTo(one)), 140, 40), "G")
+	m2, cmd = pressR(m2)
+	m2 = runCmd(t, m2, cmd)
 	if m2.cursor != 0 {
 		t.Errorf("cursor should clamp, got %d", m2.cursor)
 	}
-	keys(sized(New(rep, nil), 140, 40), "r") // nil rerun is a no-op
+	// a refresh can be started again afterwards
+	if _, c := pressR(m2); c == nil {
+		t.Errorf("r should work again after completion")
+	}
+}
+
+func TestRefreshErrorKeepsReport(t *testing.T) {
+	rep := demoReport(t, true)
+	failing := func(context.Context) (analyze.Report, doctor.Level, error) {
+		return analyze.Report{}, doctor.None, errors.New("boom\nsecond line")
+	}
+	m := sized(New(rep, failing).WithCoverage(doctor.Full), 140, 40)
+	m, cmd := pressR(m)
+	m = runCmd(t, m, cmd)
+	if len(m.report.Workloads) != len(rep.Workloads) || m.coverage != doctor.Full {
+		t.Errorf("failed refresh replaced the report")
+	}
+	v := m.View()
+	if !strings.Contains(v, "refresh failed: boom") || strings.Contains(v, "refreshing…") {
+		t.Errorf("header should show the failure:\n%s", v)
+	}
+	if !strings.Contains(v, "refresh failed: boom second line") {
+		t.Errorf("error must be collapsed to a single line:\n%s", v)
+	}
+	if v := sized(m, 30, 20).View(); strings.Contains(v, "refresh failed") {
+		for _, l := range strings.Split(v, "\n") {
+			if lipgloss.Width(l) > 30 {
+				t.Errorf("error line too wide: %q", l)
+			}
+		}
+	}
+	if v := press(m, tea.KeyDown).View(); strings.Contains(v, "refresh failed") {
+		t.Errorf("failure should clear on the next key press:\n%s", v)
+	}
+	// it can be retried
+	if _, c := pressR(m); c == nil {
+		t.Errorf("r should retry after a failure")
+	}
+}
+
+func TestRefreshUpdatesCoverage(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, func(context.Context) (analyze.Report, doctor.Level, error) {
+		return rep, doctor.Partial, nil
+	}), 140, 40)
+	m, cmd := pressR(m)
+	m = runCmd(t, m, cmd)
+	if m.coverage != doctor.Partial {
+		t.Errorf("coverage should follow the refresh, got %q", m.coverage)
+	}
+}
+
+func TestQuitCancelsRefreshContext(t *testing.T) {
+	rep := demoReport(t, true)
+	var got context.Context
+	m := sized(New(rep, func(ctx context.Context) (analyze.Report, doctor.Level, error) {
+		got = ctx
+		return rep, doctor.Full, nil
+	}), 140, 40)
+	m, cmd := pressR(m)
+	next, quit := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = next.(Model)
+	if quit == nil || quit() != tea.Quit() {
+		t.Fatal("q should quit")
+	}
+	cmd()
+	if got == nil || got.Err() == nil {
+		t.Errorf("refresh context should be cancelled after quit")
+	}
+	// a late error after quit is ignored
+	m = runCmd(t, m, func() tea.Msg { return refreshErrMsg{err: context.Canceled} })
+	if strings.Contains(m.View(), "refresh failed") {
+		t.Errorf("errors after quit must be ignored")
+	}
 }
 
 func TestHelpToggle(t *testing.T) {
 	m := sized(New(demoReport(t, true), nil), 140, 40)
 	short := m.View()
-	for _, want := range []string{"↑/↓ move", "enter detail", "/ filter", "f status", "e exception", "r rerun", "? help", "q quit"} {
+	for _, want := range []string{"↑/↓ move", "enter detail", "/ filter", "f status", "e exception", "r refresh", "? help", "q quit"} {
 		if !strings.Contains(short, want) {
 			t.Errorf("short help missing %q:\n%s", want, short)
 		}
@@ -591,8 +720,9 @@ func TestFilterEscKeepsSelection(t *testing.T) {
 func TestRerunDropsStatusFilterWhenNeutral(t *testing.T) {
 	rep := demoReport(t, true)
 	neutral := demoReport(t, false)
-	m := keys(sized(New(rep, func() analyze.Report { return neutral }), 140, 40), "f")
-	m = keys(m, "r")
+	m := keys(sized(New(rep, refreshTo(neutral)), 140, 40), "f")
+	m, cmd := pressR(m)
+	m = runCmd(t, m, cmd)
 	if m.statusFilter != "" || strings.Contains(m.View(), "status:") {
 		t.Errorf("status filter should reset:\n%s", m.View())
 	}
@@ -600,8 +730,13 @@ func TestRerunDropsStatusFilterWhenNeutral(t *testing.T) {
 
 func TestReselectGoneDropsDetailFocus(t *testing.T) {
 	rep := demoReport(t, true)
-	m := press(sized(New(rep, func() analyze.Report { r := rep; r.Workloads = rep.Workloads[1:]; return r }), 140, 40), tea.KeyEnter)
-	m = keys(m, "r")
+	m := press(sized(New(rep, func(context.Context) (analyze.Report, doctor.Level, error) {
+		r := rep
+		r.Workloads = rep.Workloads[1:]
+		return r, doctor.Full, nil
+	}), 140, 40), tea.KeyEnter)
+	m, cmd := pressR(m)
+	m = runCmd(t, m, cmd)
 	if m.detailFocus {
 		t.Errorf("detail focus should drop when the workload is gone")
 	}

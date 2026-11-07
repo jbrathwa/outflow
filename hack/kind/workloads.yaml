@@ -1,0 +1,108 @@
+# Sample workloads for the outflow kind dev cluster. Fictional; every container is a pause image.
+apiVersion: v1
+kind: Namespace
+metadata: {name: payments}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: analytics}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: shop}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: monitoring}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ledger-worker, namespace: payments}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ledger-worker}}
+  template:
+    metadata: {labels: {app: ledger-worker}}
+    spec:
+      containers:
+        - {name: pause, image: "registry.k8s.io/pause:3.10"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: event-collector, namespace: analytics}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: event-collector}}
+  template:
+    metadata: {labels: {app: event-collector}}
+    spec:
+      containers:
+        - {name: pause, image: "registry.k8s.io/pause:3.10"}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: event-collector-egress, namespace: analytics}
+spec:
+  podSelector: {matchLabels: {app: event-collector}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: cart, namespace: shop}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: cart}}
+  template:
+    metadata: {labels: {app: cart}}
+    spec:
+      containers:
+        - {name: pause, image: "registry.k8s.io/pause:3.10"}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: cart-egress, namespace: shop}
+spec:
+  podSelector: {matchLabels: {app: cart}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: reconcile, namespace: payments}
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: pause, image: "registry.k8s.io/pause:3.10"}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: node-exporter, namespace: monitoring}
+spec:
+  selector: {matchLabels: {app: node-exporter}}
+  template:
+    metadata: {labels: {app: node-exporter}}
+    spec:
+      hostNetwork: true
+      tolerations:
+        - {operator: Exists}
+      containers:
+        - {name: pause, image: "registry.k8s.io/pause:3.10"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: coredns-custom, namespace: kube-system}
+data:
+  log.override: |
+    log

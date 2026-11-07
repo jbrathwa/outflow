@@ -1,8 +1,8 @@
 # outflow usage
 
-outflow is read-only. It reads a snapshot of your cluster (built-in demo data or
-a saved JSON file today; live collection for AKS is in progress), analyses it,
-and shows the result in a TUI or prints it.
+outflow is read-only. It reads your cluster live (the Kubernetes API and, on AKS,
+Log Analytics), or a saved snapshot or the built-in demo data, analyses it, and
+shows the result in a TUI or prints it.
 
 ## Commands
 
@@ -11,10 +11,12 @@ and shows the result in a TUI or prints it.
 | `outflow` | Interactive view |
 | `outflow scan` | Print a report and exit by `--fail-on` |
 | `outflow doctor` | Check data sources and report coverage |
+| `outflow snapshot -o <file>` | Collect live data and save it as a snapshot JSON file (`-` for stdout). The file is written with mode 0600 |
 | `outflow version` | Print the version |
 
-Running a command without `--demo` or `--snapshot` currently fails with
-`live collection is not available yet; use --demo or --snapshot <file>`.
+Without `--demo` or `--snapshot`, a command reads the cluster in the current
+kubeconfig context. Live collection is read-only; the only file outflow writes is
+the one named by `snapshot -o`.
 
 ## Flags
 
@@ -27,7 +29,12 @@ Common flags (all commands):
 | `--snapshot <file>` | Read a snapshot JSON file. Cannot be combined with `--demo` |
 | `--dump-demo` | Write the demo snapshot JSON to stdout and exit. Use it to see the snapshot format or to make a file for `--snapshot` |
 | `--config <file>` | Residency config. Default: `./outflow.yaml` if it exists |
-| `--context`, `--profile`, `--since`, `--workspace` | Accepted, but only used by live collection, which is not available yet |
+| `--context <name>` | Kubeconfig context. Default: the current context |
+| `--profile auto\|azure\|generic` | Which log sources to read. `auto` (default) uses `azure` on AKS and `generic` elsewhere |
+| `--since <duration>` | How far back to read, `5m` to `30d`. Default `24h`; for example `90m`, `7d` |
+| `--workspace <guid>` | Log Analytics workspace for DNS, pod and firewall logs. Overrides `sources` in `outflow.yaml` |
+| `--join-window <duration>` | How long after a DNS lookup a firewall event still counts, `1m` to `60m`. Default `5m` |
+| `--debug` | Print query diagnostics to stderr: query name, workspace (last four characters), duration, row count and column names. Never log data |
 
 `scan` flags:
 
@@ -45,7 +52,7 @@ Without `--fail-on`, `scan` prints the report and exits 0.
 | Code | Meaning |
 |---|---|
 | `0` | Clean: the report was produced and, with `--fail-on`, the rule is not broken |
-| `1` | Tool, setup or config error (bad flag, bad `outflow.yaml`, unreadable snapshot, live collection not available) |
+| `1` | Tool, setup or config error (bad flag, bad `outflow.yaml`, unreadable snapshot, cluster or sign-in failure) |
 | `2` | The residency rule is broken according to `--fail-on` |
 
 Cases that exit 1 on purpose, so a clean result never hides missing data:
@@ -56,6 +63,21 @@ Cases that exit 1 on purpose, so a clean result never hides missing data:
 - `--fail-on unknown` with `unknown_location: ignore` in the config, which
   contradict each other.
 - `doctor` when a required source is missing (see [Doctor](#doctor)).
+
+## Permissions
+
+outflow is read-only: get, list and watch, except `get` only on two ConfigMaps. For Kubernetes, apply [`deploy/clusterrole.yaml`](../deploy/clusterrole.yaml):
+
+| Resources | Why |
+|---|---|
+| pods, nodes, namespaces | Which workloads run where, node IPs and pod CIDRs, namespace labels for NetworkPolicy selectors |
+| replicasets, deployments, statefulsets, daemonsets, jobs, cronjobs | Resolve each pod to its owning workload |
+| networkpolicies | The egress rules outflow analyses |
+| Calico `networkpolicies`, `globalnetworkpolicies` (optional) | Detect Calico policies outflow cannot evaluate |
+| configmaps named `coredns-custom` and `coredns` (optional) | Check whether DNS query logging is on. The ClusterRole restricts ConfigMaps by name only, so it grants `get` on ConfigMaps with those names in any namespace. For a tighter grant, replace that rule with a Role in `kube-system` |
+
+For Azure: **Log Analytics Reader** on each workspace and **Reader** on the AKS resource.
+Commands to grant them are in [the setup guide](setup.md#roles).
 
 ## Residency rule: `outflow.yaml`
 
@@ -75,6 +97,12 @@ residency:
       workload: payments/payment-api     # optional: limit to one workload
       reason: "Partner network"
   unknown_location: warn                 # warn | fail | ignore
+
+sources:                                 # used by live collection; all optional
+  dns_workspace: 00000000-0000-0000-0000-00000000000a
+  pod_inventory_workspace: 00000000-0000-0000-0000-00000000000b
+  firewall_workspace: 00000000-0000-0000-0000-00000000000c
+  aks_cluster: /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-eus/providers/Microsoft.ContainerService/managedClusters/aks-prod-eus
 ```
 
 Reference:
@@ -87,6 +115,10 @@ Reference:
 | `residency.exceptions[]` | Exactly one of `domain` or `cidr`, plus a non-empty `reason`. `workload` (`namespace/name`) is optional and limits the exception to that workload |
 | exception `domain` | Matched case-insensitively and ignoring a trailing dot. `*.stripe.com` matches `api.stripe.com` but not `stripe.com` or `evilstripe.com` |
 | `residency.unknown_location` | `warn` (default): unknown destinations are shown and counted as unknown. `fail`: they also fail `--fail-on outside`. `ignore`: they are not counted at all |
+| `sources.dns_workspace`, `sources.pod_inventory_workspace`, `sources.firewall_workspace` | Log Analytics workspace IDs (GUIDs) read by live collection. `--workspace <id>` sets all three at once |
+| `sources.aks_cluster` | ARM resource ID of the AKS cluster, `/subscriptions/<guid>/resourceGroups/<name>/providers/Microsoft.ContainerService/managedClusters/<name>`. Used for ARM checks. When unset, outflow derives it from the default node resource group name (`MC_<group>_<cluster>_<region>`), which needs only Reader on the cluster; otherwise it lists the subscription's clusters, which needs Reader on the subscription |
+
+A config with only `sources` and no `residency` section still runs in neutral mode.
 
 Config problems exit 1 with a message naming the field, for example
 `residency.allow.countries[0]: "us" must be two uppercase letters`. Unknown YAML
@@ -110,15 +142,33 @@ For a destination whose location is not allowed:
   as `unknown`.
 - A workload's status is its worst destination: outside, then unknown, then
   inside.
+- Only nodes in the cluster now are counted. Pod inventory, DNS and firewall
+  logs are filtered to the current nodes, so traffic from a node that was
+  removed during the window (scale-down, upgrade) is not included. When the
+  AKS resource is known, the pod inventory status says how many nodes left.
 
 Evidence levels:
 
 | Evidence | Meaning |
 |---|---|
-| `confirmed` | The workload looked the domain up, matching firewall traffic left from its node, and no other workload on that node looked up the same domain in the window |
+| `confirmed` | The workload looked the domain up, matching firewall traffic left from its node within the join window, and no other workload on that node looked up the same domain in the window |
 | `likely` | As `confirmed`, but another workload on the same node looked up the domain too, so the flow cannot be tied to one of them. Each candidate gets `likely`, and the detail pane names the others |
 | `DNS only` | A lookup with no matching firewall traffic |
 | `node-level` | Firewall traffic tied only to a node: no matching lookup (for example a hard-coded IP), or a lookup from the node IP by a `hostNetwork` pod. Shown as a `(node) <name>` row, never assigned to a workload. A `hostNetwork` lookup with no matching firewall traffic is `DNS only` on that row |
+
+### The join window
+
+Firewall logs show node IPs, not pods, so outflow ties a firewall event to a lookup when
+the event follows the lookup on the same node within the join window (default 5 minutes).
+Raise `--join-window` (up to `60m`) if clients cache DNS answers for longer, for example
+long-lived connections or high TTLs; more `node-level` rows than expected is the sign.
+A wider window makes `likely` more common, because more workloads on a node can
+match. Lower it (down to `1m`) on busy nodes to reduce ambiguity.
+
+### Domains with several locations
+
+A domain can resolve to several IPs. If those locations rate differently under the rule, the destination is `unknown` with the note "resolves to several
+locations", not guessed either way.
 
 How a location is known: `cloud range` (published Azure, AWS or GCP ranges with
 a region; high confidence), `GeoIP` (country database; medium), `anycast/CDN`
@@ -129,6 +179,7 @@ firewall log.
 ## Snapshots and offline use
 
 ```sh
+outflow snapshot -o snapshot.json --since 24h
 outflow --dump-demo > snapshot.json
 outflow scan --snapshot snapshot.json --config outflow.yaml --format md
 outflow --snapshot snapshot.json --config outflow.yaml
@@ -139,8 +190,9 @@ so newer location data applies to old snapshots.
 
 ## CI example
 
-A scheduled job that fails when a saved snapshot breaks the rule. Live mode comes
-later; until then the job analyses a snapshot file you provide.
+A scheduled job that reads the cluster live and fails when the rule is broken. It signs
+in to Azure with OIDC (workload identity federation, no stored secret), gets a kubeconfig,
+and runs `outflow scan`. The identity needs the access in [Permissions](#permissions), plus permission to fetch cluster credentials for `aks-set-context` (for example the Azure Kubernetes Service Cluster User Role).
 
 ```yaml
 # .github/workflows/residency.yml
@@ -148,11 +200,23 @@ name: residency
 on:
   schedule:
     - cron: "0 6 * * *"
+permissions:
+  id-token: write
+  contents: read
 jobs:
   outflow:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: rg-aks-prod
+          cluster-name: aks-prod-eus
       - name: Install outflow
         run: |
           base=https://github.com/jbrathwa/outflow/releases/latest/download
@@ -165,18 +229,31 @@ jobs:
       - name: Check data residency
         run: |
           set +e
-          outflow scan --snapshot snapshot.json --config outflow.yaml \
+          outflow scan --config outflow.yaml --workspace <workspace-guid> \
             --format md --fail-on outside > report.md
           code=$?
           cat report.md >> "$GITHUB_STEP_SUMMARY"
           exit $code
 ```
 
+Drop `--workspace` if `outflow.yaml` has `sources`. If the firewall logs to another
+workspace, set `sources.firewall_workspace` instead of using `--workspace`.
+
 Exit 2 means the rule is broken; exit 1 means the job could not judge (bad
-config, missing sources, partial coverage). Treat both as failures.
+config, sign-in failure, missing sources, partial coverage). Treat both as failures.
 
 To pin a version instead of `latest`, use
 `https://github.com/jbrathwa/outflow/releases/download/v0.1.0` as `base`.
+
+### Offline alternative
+
+If the job cannot reach the cluster, analyse a snapshot file you collected elsewhere
+with `outflow snapshot -o`:
+
+```sh
+outflow scan --snapshot snapshot.json --config outflow.yaml \
+  --format md --fail-on outside > report.md
+```
 
 ## Doctor
 
@@ -191,7 +268,8 @@ and cannot answer. The fix steps are in [the setup guide](setup.md).
 - the Kubernetes API;
 - at least one traffic source (firewall logs or CoreDNS query logs);
 - on Azure CNI Overlay or kubenet, where pods leave with node IPs: the CoreDNS
-  query logs (log plugin and log collection) and no NodeLocal DNS Cache.
+  query logs (log plugin and log collection) and no node-local DNS cache
+  (NodeLocal DNSCache or AKS LocalDNS).
 
 Anything else only lowers coverage. Partial coverage alone does not fail
 `doctor`; `scan --fail-on` fails on it unless you pass `--allow-partial`. See [the demo walkthrough](demo.md#doctor-on-a-degraded-cluster)

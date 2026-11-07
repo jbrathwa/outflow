@@ -2,8 +2,10 @@ package analyze
 
 import (
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/location"
@@ -17,10 +19,13 @@ const ReportSchemaVersion = 1
 // Destination is one observation with its location and residency status.
 type Destination struct {
 	Observation
-	Location  location.Location `json:"location"`
-	Status    Status            `json:"status"`
-	Exception string            `json:"exception"` // reason of the matching exception
-	SaaS      bool              `json:"saas"`
+	Location location.Location `json:"location"`
+	// OtherLocations are the distinct locations of OtherIPs that differ from Location.
+	OtherLocations []location.Location `json:"otherLocations,omitempty"`
+	Status         Status              `json:"status"`
+	Exception      string              `json:"exception"`      // reason of the matching exception
+	Note           string              `json:"note,omitempty"` // why the status is unknown despite a rule
+	SaaS           bool                `json:"saas"`
 }
 
 // RowKind says what a report row stands for.
@@ -64,13 +69,27 @@ type Report struct {
 	RuleConfigured bool             `json:"ruleConfigured"`
 	Rule           string           `json:"rule"`
 	LocationData   string           `json:"locationData"`
+	JoinWindow     string           `json:"joinWindow"`
 	Counts         Counts           `json:"counts"`
 	Workloads      []WorkloadResult `json:"workloads"`
 }
 
-// Build attributes the snapshot's egress, locates and classifies every destination,
-// and returns sorted rows: every workload, plus node-level and unknown-pod subjects.
+// Options tunes the analysis. A zero JoinWindow means DefaultJoinWindow.
+type Options struct {
+	JoinWindow time.Duration
+}
+
+// Build is BuildWith using default options.
 func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
+	return BuildWith(s, db, cfg, Options{})
+}
+
+// BuildWith attributes the snapshot's egress, locates and classifies every destination,
+// and returns sorted rows: every workload, plus node-level and unknown-pod subjects.
+func BuildWith(s model.Snapshot, db *location.DB, cfg config.Config, opt Options) Report {
+	if opt.JoinWindow <= 0 {
+		opt.JoinWindow = DefaultJoinWindow
+	}
 	r := cfg.Residency
 	rep := Report{
 		SchemaVersion:  ReportSchemaVersion,
@@ -79,6 +98,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 		RuleConfigured: r != nil,
 		Rule:           ruleString(r),
 		LocationData:   db.Version(),
+		JoinWindow:     opt.JoinWindow.String(),
 		Workloads:      []WorkloadResult{},
 	}
 
@@ -94,7 +114,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 			Egress: netpol.Evaluate(w, s.NetworkPolicies, private),
 		})
 	}
-	for _, o := range Attribute(s) {
+	for _, o := range Attribute(s, opt.JoinWindow) {
 		i, ok := idx[o.Subject]
 		if !ok {
 			i = len(rep.Workloads)
@@ -102,7 +122,11 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 			rep.Workloads = append(rep.Workloads, WorkloadResult{ID: o.Subject, Kind: subjectKind(o), NodeLevel: o.NodeLevel})
 		}
 		d := Destination{Observation: o, Location: locate(db, o.IP), SaaS: location.IsSaaS(o.Domain)}
+		d.OtherLocations = otherLocations(db, d.Location, o.OtherIPs)
 		d.Status, d.Exception = Classify(d, r, o.Subject)
+		if r != nil && d.Exception == "" && d.Status == Unknown && locationsDisagree(d, r) {
+			d.Note = NoteSeveralLocations
+		}
 		rep.Workloads[i].Destinations = append(rep.Workloads[i].Destinations, d)
 	}
 
@@ -112,8 +136,10 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 		finishRow(w, r)
 		rep.Counts.Destinations += len(w.Destinations)
 		for _, d := range w.Destinations {
-			if d.Location.Known() {
-				countries[d.Location.Country] = true
+			for _, l := range allLocations(d) {
+				if l.Known() {
+					countries[l.Country] = true
+				}
 			}
 			if r == nil || !counts(d, r) {
 				continue
@@ -155,6 +181,32 @@ func locate(db *location.DB, ip string) location.Location {
 	return db.Lookup(a)
 }
 
+// NoteSeveralLocations explains an unknown status caused by IPs in differing locations.
+const NoteSeveralLocations = "resolves to several locations"
+
+// sameLocation compares what residency cares about: country, provider, region, global.
+func sameLocation(a, b location.Location) bool {
+	return a.Country == b.Country && a.Provider == b.Provider && a.Region == b.Region && a.Global == b.Global
+}
+
+// otherLocations returns the distinct locations of ips that differ from primary.
+func otherLocations(db *location.DB, primary location.Location, ips []string) []location.Location {
+	var out []location.Location
+	for _, ip := range ips {
+		l := locate(db, ip)
+		if sameLocation(l, primary) || slices.ContainsFunc(out, func(x location.Location) bool { return sameLocation(x, l) }) {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// allLocations is the destination's own location followed by its other locations.
+func allLocations(d Destination) []location.Location {
+	return append([]location.Location{d.Location}, d.OtherLocations...)
+}
+
 // finishRow fills a row's locations, counted totals and worst-of status.
 func finishRow(w *WorkloadResult, r *config.Residency) {
 	if w.Destinations == nil {
@@ -192,16 +244,18 @@ func locations(ds []Destination) []string {
 	var out []string
 	var global, unknown bool
 	for _, d := range ds {
-		switch l := d.Location; {
-		case l.Known():
-			if !seen[l.Country] {
-				seen[l.Country] = true
-				out = append(out, l.Country)
+		for _, l := range allLocations(d) {
+			switch {
+			case l.Known():
+				if !seen[l.Country] {
+					seen[l.Country] = true
+					out = append(out, l.Country)
+				}
+			case l.Global:
+				global = true
+			default:
+				unknown = true
 			}
-		case l.Global:
-			global = true
-		default:
-			unknown = true
 		}
 	}
 	sort.Strings(out)

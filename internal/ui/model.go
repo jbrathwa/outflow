@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -19,7 +20,7 @@ const sideBySideMin = 110
 // Model is the workload-first screen: a workload table and a detail pane.
 type Model struct {
 	report   analyze.Report
-	rerun    func() analyze.Report
+	refresh  func(context.Context) (analyze.Report, doctor.Level, error)
 	coverage doctor.Level
 	styles   styles
 	keys     keyMap
@@ -36,10 +37,24 @@ type Model struct {
 	detailFocus  bool            // enter moved focus to the detail pane
 	destCursor   int             // highlighted destination while detailFocus
 	overlay      bool            // exception snippet box is open
+
+	ctx        context.Context // cancelled on quit; refresh runs under it
+	cancel     context.CancelFunc
+	refreshing bool   // a background refresh is running
+	refreshErr string // last failure, shown until the next key press
 }
 
-// New builds the screen for a report. rerun re-creates the report on demand.
-func New(report analyze.Report, rerun func() analyze.Report) Model {
+// refreshDoneMsg carries a finished background refresh.
+type refreshDoneMsg struct {
+	report analyze.Report
+	cov    doctor.Level
+}
+
+// refreshErrMsg carries a failed background refresh.
+type refreshErrMsg struct{ err error }
+
+// New builds the screen for a report. refresh re-creates the report and coverage on demand.
+func New(report analyze.Report, refresh func(context.Context) (analyze.Report, doctor.Level, error)) Model {
 	h := help.New()
 	st := newStyles()
 	h.Styles.ShortKey, h.Styles.ShortDesc, h.Styles.ShortSeparator = st.Muted, st.Muted, st.Muted
@@ -49,8 +64,10 @@ func New(report analyze.Report, rerun func() analyze.Report) Model {
 	in.Prompt = "/ "
 	in.PromptStyle = st.Prompt
 	in.Placeholder = "workload"
+	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
-		report: report, rerun: rerun, coverage: doctor.Full,
+		ctx: ctx, cancel: cancel,
+		report: report, refresh: refresh, coverage: doctor.Full,
 		styles: st, keys: newKeyMap(), help: h, input: in, detail: viewport.New(0, 0),
 	}
 }
@@ -70,15 +87,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
+	case refreshDoneMsg:
+		m.refreshing = false
+		if m.ctx.Err() == nil {
+			m.applyReport(msg.report, msg.cov)
+		}
+	case refreshErrMsg:
+		m.refreshing = false
+		if m.ctx.Err() == nil {
+			m.refreshErr = oneLine(msg.err.Error())
+		}
+		m.layout()
 	case tea.KeyMsg:
 		return m.onKey(msg)
 	}
 	return m, nil
 }
 
+// quit cancels any running refresh and ends the program.
+func (m Model) quit() (tea.Model, tea.Cmd) {
+	m.cancel()
+	return m, tea.Quit
+}
+
+// oneLine collapses whitespace runs (including newlines) into single spaces.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.ForceQuit) {
-		return m, tea.Quit
+		return m.quit()
+	}
+	if m.refreshErr != "" {
+		m.refreshErr = ""
+		m.layout()
 	}
 	if m.filtering {
 		return m.onFilterKey(msg), nil
@@ -88,13 +129,13 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Back, m.keys.Exception):
 			m.overlay = false
 		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
+			return m.quit()
 		}
 		return m, nil
 	}
 	switch {
 	case key.Matches(msg, m.keys.Quit):
-		return m, tea.Quit
+		return m.quit()
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
 	case key.Matches(msg, m.keys.Filter):
@@ -106,7 +147,7 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Exception):
 		m.overlay = true
 	case key.Matches(msg, m.keys.Rerun):
-		m.rerunReport()
+		return m.startRefresh()
 	case key.Matches(msg, m.keys.Enter):
 		if _, ok := m.selected(); ok && !m.detailFocus {
 			m.detailFocus, m.destCursor = true, 0
@@ -173,13 +214,28 @@ func (m *Model) cycleStatus() {
 	m.reselect(id)
 }
 
-// rerunReport swaps in a fresh report, keeping the selected workload when it still exists.
-func (m *Model) rerunReport() {
-	if m.rerun == nil {
-		return
+// startRefresh runs refresh in the background; repeats while one runs are ignored.
+func (m Model) startRefresh() (tea.Model, tea.Cmd) {
+	if m.refresh == nil || m.refreshing {
+		return m, nil
 	}
+	m.refreshing = true
+	m.layout()
+	refresh, ctx := m.refresh, m.ctx
+	return m, func() tea.Msg {
+		report, cov, err := refresh(ctx)
+		if err != nil {
+			return refreshErrMsg{err: err}
+		}
+		return refreshDoneMsg{report: report, cov: cov}
+	}
+}
+
+// applyReport swaps in a fresh report and coverage, keeping the selected workload
+// when it still exists.
+func (m *Model) applyReport(report analyze.Report, cov doctor.Level) {
 	id := m.selectedID()
-	m.report = m.rerun()
+	m.report, m.coverage = report, cov
 	if !m.report.RuleConfigured {
 		m.statusFilter = ""
 	}

@@ -24,7 +24,10 @@ type geometry struct {
 func (m Model) geom() geometry {
 	g := geometry{header: 1, footer: 1, side: m.width >= sideBySideMin}
 	if m.coverageHint() != "" {
-		g.header = 2
+		g.header++
+	}
+	if m.statusLine() != "" {
+		g.header++
 	}
 	g.bodyH = max(m.height-g.header-g.footer, 3)
 	if g.side {
@@ -171,6 +174,20 @@ func (m Model) coverageHint() string {
 	return " " + m.styles.Warn.Render(fit(t, max(m.width-1, 0), false))
 }
 
+// statusLine is the refresh progress or failure line, or "" when idle.
+func (m Model) statusLine() string {
+	var t string
+	switch {
+	case m.refreshing:
+		t = "refreshing…"
+	case m.refreshErr != "":
+		t = "refresh failed: " + m.refreshErr
+	default:
+		return ""
+	}
+	return " " + m.styles.Warn.Render(fit(t, max(m.width-1, 0), false))
+}
+
 // headerView renders the header, fitted to the terminal width. When it is too
 // wide the window label goes first, then the rule text is truncated; pills stay.
 func (m Model) headerView() string {
@@ -218,6 +235,9 @@ func (m Model) headerView() string {
 	}
 	if h := m.coverageHint(); h != "" {
 		line += "\n" + h
+	}
+	if s := m.statusLine(); s != "" {
+		line += "\n" + s
 	}
 	return line
 }
@@ -448,6 +468,22 @@ func destNotes(d analyze.Destination) []string {
 		add("IP resolved by outflow")
 	case "firewall log":
 		add("IP from firewall log")
+	}
+	if len(d.OtherIPs) > 0 {
+		line := "also resolves to: " + strings.Join(d.OtherIPs, ", ")
+		if len(d.OtherLocations) > 0 {
+			var ls []string
+			for _, l := range d.OtherLocations {
+				ls = append(ls, l.String())
+			}
+			line += " (" + strings.Join(ls, ", ") + ")"
+		}
+		if d.Note != "" {
+			line += " — " + d.Note
+		}
+		add(line)
+	} else if d.Note != "" {
+		add(d.Note)
 	}
 	if d.Evidence == analyze.Likely && len(d.AlsoLikely) > 0 {
 		add("also: " + strings.Join(d.AlsoLikely, ", "))
