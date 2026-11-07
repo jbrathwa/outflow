@@ -42,6 +42,8 @@ Usage:
   outflow [flags]            interactive view
   outflow scan [flags]       print a report and exit by --fail-on
   outflow doctor [flags]     check data sources and coverage
+  outflow snapshot -o <file> [flags]
+                             collect a snapshot JSON file (- for stdout, mode 0600)
   outflow version
 
 Without --demo or --snapshot, outflow reads the cluster in the current kubeconfig
@@ -113,7 +115,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	case "help":
 		fmt.Fprint(stdout, usage)
 		return exitOK
-	case "", "scan", "doctor":
+	case "", "scan", "doctor", "snapshot":
 	default:
 		fmt.Fprintf(stderr, "outflow: unknown command %q\n\n%s", cmd, usage)
 		return exitError
@@ -131,6 +133,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		fs.StringVar(&failOn, "fail-on", "", "")
 		fs.BoolVar(&allowPartial, "allow-partial", false, "")
 	}
+	var output string
+	if cmd == "snapshot" {
+		fs.StringVar(&output, "o", "", "")
+	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprint(stdout, usage)
@@ -142,6 +148,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "outflow: unexpected argument %q\n\n%s", fs.Arg(0), usage)
 		return exitError
+	}
+	if cmd == "snapshot" {
+		if err := c.snapshotFlagError(); err != nil {
+			fmt.Fprintf(stderr, "outflow: %v\n", err)
+			return exitError
+		}
+		if output == "" {
+			fmt.Fprintln(stderr, "outflow: snapshot needs -o <file> (- for stdout)")
+			return exitError
+		}
 	}
 	if c.dumpDemo {
 		if _, err := stdout.Write(fixtures.DemoJSON()); err != nil {
@@ -189,7 +205,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	}
 	cfgFound := cfg.Residency != nil
 
-	// collect returns the snapshot to analyze: the offline one, or a fresh live collection.
+	// collectSnap returns the snapshot to analyze: the offline one, or a fresh live collection.
 	collectSnap := func(context.Context) (model.Snapshot, error) { return snap, nil }
 	ctx := context.Background()
 	if c.isLive() {
@@ -214,6 +230,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	}
 
 	switch cmd {
+	case "snapshot":
+		if err := writeSnapshot(stdout, stderr, output, snap); err != nil {
+			return fail(err)
+		}
+		return exitOK
 	case "doctor":
 		res := doctor.Run(snap, db, cfg, cfgFound)
 		doctor.Print(stdout, res, useColor(stdout))
