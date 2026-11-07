@@ -142,6 +142,10 @@ For a destination whose location is not allowed:
   as `unknown`.
 - A workload's status is its worst destination: outside, then unknown, then
   inside.
+- Only nodes in the cluster now are counted. Pod inventory, DNS and firewall
+  logs are filtered to the current nodes, so traffic from a node that was
+  removed during the window (scale-down, upgrade) is not included. When the
+  AKS resource is known, the pod inventory status says how many nodes left.
 
 Evidence levels:
 

@@ -198,3 +198,51 @@ func TestPodProbe(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 }
+
+func TestPodHistoryReportsDepartedNodes(t *testing.T) {
+	row := [][]any{{"shop", "a", "10.244.1.9", "aks-np1-vmss0001", "StatefulSet", "a", "2026-11-07T08:00:00Z", "2026-11-07T09:59:00Z"}}
+	s := lafake.New(t, map[string]lafake.Handler{
+		"pod-inventory": func(lafake.Call) (lafake.Response, int) { return lafake.Response{Columns: podCols, Rows: row}, 200 },
+		"pod-inventory-nodes": func(lafake.Call) (lafake.Response, int) {
+			return lafake.Response{Columns: []string{"Computer"}, Rows: [][]any{{"AKS-NP1-VMSS0001"}, {"aks-np1-vmss0002"}, {"aks-np1-vmss0003"}}}, 200
+		},
+	})
+	p := podSource(s.URL, podWS)
+	p.Target.AKSResourceID = aksID
+	_, st := p.PodHistory(context.Background(), podScope())
+	if st.State != "warn" || st.Detail != "1 pods (0 no longer running); 2 nodes left during the window — their traffic is not included" {
+		t.Fatalf("%+v", st)
+	}
+	var c lafake.Call
+	for _, x := range s.Calls() {
+		if x.Name == "pod-inventory-nodes" {
+			c = x
+		}
+	}
+	if !strings.Contains(c.KQL, `_ResourceId in~ ("`+aksID+`")`) || !strings.Contains(c.KQL, "distinct Computer") ||
+		!c.Window.Start.Equal(podScope().Window.Start) || !c.Window.End.Equal(podEnd) {
+		t.Fatalf("%+v", c)
+	}
+	// One departed node reads in the singular.
+	s = lafake.New(t, map[string]lafake.Handler{
+		"pod-inventory": func(lafake.Call) (lafake.Response, int) { return lafake.Response{Columns: podCols, Rows: row}, 200 },
+		"pod-inventory-nodes": func(lafake.Call) (lafake.Response, int) {
+			return lafake.Response{Columns: []string{"Computer"}, Rows: [][]any{{"aks-np1-vmss0002"}}}, 200
+		},
+	})
+	p = podSource(s.URL, podWS)
+	p.Target.AKSResourceID = aksID
+	if _, st = p.PodHistory(context.Background(), podScope()); !strings.HasSuffix(st.Detail, "; 1 node left during the window — their traffic is not included") {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestPodHistoryNoAKSIDNoNodeQuery(t *testing.T) {
+	s := podServer(t, nil, "", 0)
+	podSource(s.URL, podWS).PodHistory(context.Background(), podScope())
+	for _, c := range s.Calls() {
+		if c.Name == "pod-inventory-nodes" {
+			t.Fatal("pod-inventory-nodes queried without an AKS resource ID")
+		}
+	}
+}

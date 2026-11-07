@@ -42,6 +42,15 @@ func podInventoryKQL(w model.Window, nodes []string) string {
 		"| summarize first = min(TimeGenerated), last = max(TimeGenerated) by Namespace, Name, PodIp, Computer, ControllerKind, ControllerName"
 }
 
+// podNodesKQL lists the nodes the AKS cluster reported pods from in the window. The ID is
+// matched with in~ (case-insensitive, like =~) so --debug elides it with the other lists.
+func podNodesKQL(w model.Window, aksID string) string {
+	return "KubePodInventory\n" +
+		"| where TimeGenerated between (" + kqlTime(w.Start) + " .. " + kqlTime(w.End) + ")\n" +
+		"| where _ResourceId in~ (" + kqlStrings([]string{aksID}) + ")\n" +
+		"| distinct Computer"
+}
+
 func podProbeKQL(nodes []string) string {
 	return "KubePodInventory\n| where Computer in (" + kqlStrings(nodes) + ")\n| take 1"
 }
@@ -160,7 +169,43 @@ func (p *PodSource) PodHistory(ctx context.Context, sc collect.Scope) ([]model.P
 	if truncated {
 		st.State, st.Detail = "warn", "truncated: result too large even after splitting the window"
 	}
+	if n := p.departedNodes(ctx, ws, sc); n > 0 {
+		word := "nodes"
+		if n == 1 {
+			word = "node"
+		}
+		st.State = "warn"
+		st.Detail += fmt.Sprintf("; %d %s left during the window — their traffic is not included", n, word)
+	}
 	return out, st
+}
+
+// departedNodes counts nodes of this AKS cluster that reported pods during the window but
+// are no longer in the cluster: queries are filtered to current nodes, so their pods, DNS
+// and firewall rows are missing. It returns 0 when the AKS resource ID is unknown or the
+// query fails (nothing more can be said).
+func (p *PodSource) departedNodes(ctx context.Context, ws string, sc collect.Scope) int {
+	if p.Target == nil || p.Target.AKSResourceID == "" {
+		return 0
+	}
+	t, err := p.LA.Query(ctx, "pod-inventory-nodes", ws, podNodesKQL(sc.Window, p.Target.AKSResourceID), sc.Window)
+	ci := t.Col("Computer")
+	if err != nil || ci < 0 {
+		return 0
+	}
+	current := make(map[string]bool, len(sc.NodeNames))
+	for _, n := range sc.NodeNames {
+		current[strings.ToLower(n)] = true
+	}
+	gone := map[string]bool{}
+	for _, r := range t.Rows {
+		if ci < len(r) {
+			if c, ok := r[ci].(string); ok && c != "" && !current[strings.ToLower(c)] {
+				gone[strings.ToLower(c)] = true
+			}
+		}
+	}
+	return len(gone)
 }
 
 // Probe checks that KubePodInventory has rows for this cluster's nodes in the last hour.
