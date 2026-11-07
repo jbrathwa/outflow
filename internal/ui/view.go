@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jbrathwa/outflow/internal/analyze"
+	"github.com/jbrathwa/outflow/internal/doctor"
 )
 
 // geometry is the computed screen layout.
@@ -21,7 +23,7 @@ type geometry struct {
 
 func (m Model) geom() geometry {
 	g := geometry{header: 1, footer: 1, side: m.width >= sideBySideMin}
-	if m.coverage != "FULL" && m.coverage != "" {
+	if m.coverageHint() != "" {
 		g.header = 2
 	}
 	g.bodyH = max(m.height-g.header-g.footer, 3)
@@ -34,7 +36,7 @@ func (m Model) geom() geometry {
 	}
 	g.sepH = 1
 	g.tableW, g.detailW = m.width, m.width
-	g.tableH = min(max(g.bodyH*2/5, 4), 1+len(m.report.Workloads))
+	g.tableH = min(max(g.bodyH*2/5, 4), 1+len(m.report.Workloads), max(g.bodyH-2, 1))
 	g.detailH = max(g.bodyH-g.tableH-g.sepH, 1)
 	return g
 }
@@ -66,8 +68,12 @@ func (m Model) View() string {
 		return ""
 	}
 	if len(m.report.Workloads) == 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			m.styles.Empty.Render("No workloads in snapshot"))
+		hint, h := m.coverageHint(), m.height
+		msg := m.styles.Empty.Render("No workloads in snapshot")
+		if hint == "" {
+			return lipgloss.Place(m.width, h, lipgloss.Center, lipgloss.Center, msg)
+		}
+		return hint + "\n" + lipgloss.Place(m.width, max(h-1, 1), lipgloss.Center, lipgloss.Center, msg)
 	}
 	g := m.geom()
 	var body string
@@ -81,7 +87,16 @@ func (m Model) View() string {
 		body = lipgloss.JoinVertical(lipgloss.Left, table, div, detail)
 	}
 	foot := " " + m.help.ShortHelpView(m.keys.shortHelp())
-	return m.headerView() + "\n" + body + "\n" + foot
+	return clip(m.headerView()+"\n"+body+"\n"+foot, m.width)
+}
+
+// clip truncates every line to w cells as a last guard against wrapping.
+func clip(s string, w int) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, w, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // block pads or crops s to exactly w x h cells.
@@ -97,33 +112,61 @@ func block(s string, w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
+// coverageHint is the second header line, or "" when coverage is full.
+func (m Model) coverageHint() string {
+	var t string
+	switch m.coverage {
+	case doctor.Partial:
+		t = "coverage partial — run outflow doctor"
+	case doctor.None:
+		t = "coverage none — run outflow doctor"
+	default:
+		return ""
+	}
+	return " " + m.styles.Warn.Render(fit(t, max(m.width-1, 0), false))
+}
+
+// headerView renders the header, fitted to the terminal width. When it is too
+// wide the window label goes first, then the rule text is truncated; pills stay.
 func (m Model) headerView() string {
 	st, r := m.styles, m.report
-	parts := []string{st.Title.Render("outflow"), r.Cluster.Name}
+	left := " " + st.Title.Render("outflow") + st.Muted.Render(" · ") + r.Cluster.Name + st.Muted.Render(" · ")
 	if r.RuleConfigured {
-		parts = append(parts, "rule: "+strings.TrimPrefix(r.Rule, ""))
+		left += "rule: " + r.Rule
 	} else {
-		parts = append(parts, st.Muted.Render("no rule"))
+		left += st.Muted.Render("no rule")
 	}
-	line := " " + strings.Join(parts, st.Muted.Render(" · "))
+	var pills string
 	if r.RuleConfigured {
-		line += "   " + strings.Join([]string{
+		pills = strings.Join([]string{
 			st.PillOut.Render(fmt.Sprintf("[%d outside]", r.Counts.Outside)),
 			st.PillUnk.Render(fmt.Sprintf("[%d unknown]", r.Counts.Unknown)),
 			st.PillIn.Render(fmt.Sprintf("[%d inside]", r.Counts.Inside)),
 		}, " ")
 	} else {
-		line += "   " + st.PillNeutral.Render(fmt.Sprintf("%d workloads · %d destinations · %d countries",
+		pills = st.PillNeutral.Render(fmt.Sprintf("%d workloads · %d destinations · %d countries",
 			r.Counts.Workloads, r.Counts.Destinations, r.Counts.Countries))
 	}
+	win := ""
 	if w := windowLabel(r.Window.Start, r.Window.End); w != "" {
-		line += "   " + st.Muted.Render(w)
+		win = "   " + st.Muted.Render(w)
 	}
-	switch m.coverage {
-	case "PARTIAL":
-		line += "\n " + st.Warn.Render("coverage partial — run outflow doctor")
-	case "NONE":
-		line += "\n " + st.Warn.Render("coverage none — run outflow doctor")
+	const gap = "   "
+	if lipgloss.Width(left)+len(gap)+lipgloss.Width(pills)+lipgloss.Width(win) > m.width {
+		win = ""
+	}
+	room := m.width - len(gap) - lipgloss.Width(pills) - lipgloss.Width(win)
+	line := fit(left, max(room, 0), false)
+	if room < 1 {
+		line = ""
+	}
+	line = strings.TrimRight(line, " ")
+	line += gap + pills + win
+	if lipgloss.Width(line) > m.width {
+		line = fit(line, m.width, false)
+	}
+	if h := m.coverageHint(); h != "" {
+		line += "\n" + h
 	}
 	return line
 }
@@ -184,17 +227,17 @@ func (m Model) workloadRow(w analyze.WorkloadResult, cols []col, ws []int, sel b
 	add := func(i int, text string, style lipgloss.Style) {
 		s := style
 		if sel {
-			s = s.Background(colSelBg)
+			s = st.OnSelected(s)
 		}
 		cells = append(cells, s.Render(fit(text, ws[i], cols[i].right)))
 	}
-	plain := lipgloss.NewStyle()
+	plain := st.Row
 	n := 0
 	if m.report.RuleConfigured {
 		glyph, style := statusGlyph(st, w.Status)
 		add(n, glyph, style)
 		n++
-		add(n, w.ID, st.Bold.UnsetBold())
+		add(n, w.ID, st.Row)
 		n++
 		add(n, egressCell(w), st.Muted)
 		n++
@@ -214,7 +257,7 @@ func (m Model) workloadRow(w analyze.WorkloadResult, cols []col, ws []int, sel b
 	}
 	marker := "  "
 	if sel {
-		marker = st.Selected.Bold(true).Render("▌ ")
+		marker = st.Marker.Render("▌ ")
 	}
 	sep := " "
 	if sel {

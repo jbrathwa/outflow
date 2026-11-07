@@ -20,6 +20,7 @@ type styles struct {
 	ColHead, Divider     lipgloss.Style
 	Warn, Note, Selected lipgloss.Style
 	Empty                lipgloss.Style
+	Row, Marker          lipgloss.Style
 }
 
 func newStyles() styles {
@@ -41,5 +42,10 @@ func newStyles() styles {
 		Note:        lipgloss.NewStyle().Foreground(colMuted).Italic(true),
 		Selected:    lipgloss.NewStyle().Background(colSelBg),
 		Empty:       lipgloss.NewStyle().Foreground(colMuted),
+		Row:         lipgloss.NewStyle(),
+		Marker:      lipgloss.NewStyle().Bold(true).Background(colSelBg),
 	}
 }
+
+// OnSelected adds the selected-row background to a cell style.
+func (s styles) OnSelected(c lipgloss.Style) lipgloss.Style { return c.Background(colSelBg) }

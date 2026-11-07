@@ -140,6 +140,10 @@ func TestEmptyReport(t *testing.T) {
 		t.Errorf("empty view:\n%s", v)
 	}
 	press(sized(New(analyze.Report{}, nil), 100, 30), tea.KeyDown) // must not panic
+	v = sized(New(analyze.Report{}, nil).WithCoverage(doctor.None), 100, 30).View()
+	if !strings.Contains(v, "coverage none — run outflow doctor") || !strings.Contains(v, "No workloads in snapshot") {
+		t.Errorf("empty view should keep the coverage hint:\n%s", v)
+	}
 }
 
 func TestCoverageHint(t *testing.T) {
@@ -187,5 +191,24 @@ func TestFormatHelpers(t *testing.T) {
 	}
 	if got := fit("payments/ledger-worker", 10, false); got != "payments/…" {
 		t.Errorf("fit = %q", got)
+	}
+}
+
+func TestNoLineExceedsWidth(t *testing.T) {
+	for _, ruled := range []bool{true, false} {
+		rep := demoReport(t, ruled)
+		for _, size := range [][2]int{{80, 24}, {60, 24}, {40, 10}} {
+			m := sized(New(rep, nil).WithCoverage(doctor.Partial), size[0], size[1])
+			lines := strings.Split(m.View(), "\n")
+			if len(lines) > size[1] {
+				t.Errorf("ruled=%v %dx%d: %d lines", ruled, size[0], size[1], len(lines))
+			}
+			for _, l := range lines {
+				if lipgloss.Width(l) > size[0] {
+					t.Errorf("ruled=%v %dx%d: line too wide (%d): %q", ruled, size[0], size[1], lipgloss.Width(l), l)
+				}
+			}
+			press(m, tea.KeyDown)
+		}
 	}
 }
