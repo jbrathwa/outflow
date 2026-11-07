@@ -44,6 +44,10 @@ func kindKubeconfig(t *testing.T) string {
 	if p == "" {
 		t.Skip("OUTFLOW_KIND_KUBECONFIG not set (run hack/kind/up.sh)")
 	}
+	// go test runs in the package directory; a relative path is taken from the repo root.
+	if !filepath.IsAbs(p) {
+		p = filepath.Join("..", "..", p)
+	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +87,15 @@ func kindEnv(t *testing.T) {
 	ledger, collector := podFor("payments/ledger-worker"), podFor("analytics/event-collector")
 	now := time.Now().UTC().Truncate(time.Minute)
 	ts := func(d time.Duration) string { return now.Add(d).Format(time.RFC3339) }
+	// The kind pods are only minutes old: lookups must come after both pods started, or no
+	// pod held those IPs at lookup time. Lookups at the first whole minute after the later
+	// start, firewall traffic 3 minutes after that.
+	started := ledger.Start
+	if collector.Start.After(started) {
+		started = collector.Start
+	}
+	lookupAt := started.UTC().Truncate(time.Minute).Add(time.Minute)
+	at := func(d time.Duration) string { return lookupAt.Add(d).Format(time.RFC3339) }
 	var allPods [][]any
 	for _, p := range st.Pods {
 		if p.IP == "" || p.Node == "" {
@@ -111,8 +124,8 @@ func kindEnv(t *testing.T) {
 	srv := lafake.New(t, map[string]lafake.Handler{
 		"dns-lookups": func(lafake.Call) (lafake.Response, int) {
 			return lafake.Response{Columns: []string{"podIp", "domain", "bin", "count"}, Rows: [][]any{
-				{ledger.IP, "files.example", ts(-10 * time.Minute), float64(4)},
-				{collector.IP, "api.collector.example", ts(-10 * time.Minute), float64(2)},
+				{ledger.IP, "files.example", at(0), float64(4)},
+				{collector.IP, "api.collector.example", at(0), float64(2)},
 			}}, 200
 		},
 		"dns-sample": func(lafake.Call) (lafake.Response, int) {
@@ -136,8 +149,8 @@ func kindEnv(t *testing.T) {
 		"fw-app": func(lafake.Call) (lafake.Response, int) {
 			cols := []string{"SourceIp", "Fqdn", "DestinationPort", "Protocol", "Action", "Rule", "bin", "count", "_ResourceId"}
 			return lafake.Response{Columns: cols, Rows: [][]any{
-				{nodeIPs[ledger.Node], "files.example", float64(443), "HTTPS", "Allow", "allow-web", ts(-7 * time.Minute), float64(4), ""},
-				{nodeIPs[collector.Node], "api.collector.example", float64(443), "HTTPS", "Allow", "allow-web", ts(-7 * time.Minute), float64(2), ""},
+				{nodeIPs[ledger.Node], "files.example", float64(443), "HTTPS", "Allow", "allow-web", at(3 * time.Minute), float64(4), ""},
+				{nodeIPs[collector.Node], "api.collector.example", float64(443), "HTTPS", "Allow", "allow-web", at(3 * time.Minute), float64(2), ""},
 			}}, 200
 		},
 		"fw-net": func(lafake.Call) (lafake.Response, int) {
