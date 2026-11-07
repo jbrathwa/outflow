@@ -20,6 +20,9 @@ func TestParseSince(t *testing.T) {
 		{"31d", 0, true},
 		{"abc", 0, true},
 		{"xd", 0, true},
+		{"-1d", 0, true},
+		// 1+2^48 days wraps to exactly 24h when multiplied out.
+		{"281474976710657d", 0, true},
 	}
 	for _, c := range cases {
 		got, err := ParseSince(c.in)

@@ -27,6 +27,10 @@ func ParseSince(s string) (time.Duration, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid --since %q: use a duration like 90m, 24h or 7d", s)
 		}
+		// Check before multiplying: a large n would overflow and could wrap into range.
+		if n < 0 || n > int(maxSince/(24*time.Hour)) {
+			return 0, fmt.Errorf("--since %q out of range: must be between 5m and 30d", s)
+		}
 		d = time.Duration(n) * 24 * time.Hour
 	} else {
 		var err error
