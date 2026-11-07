@@ -31,7 +31,8 @@ type Observation struct {
 	NodeLevel  bool      `json:"nodeLevel"`
 	Domain     string    `json:"domain"`
 	IP         string    `json:"ip"`
-	IPSource   string    `json:"ipSource"` // "outflow" | "firewall log" | ""
+	IPSource   string    `json:"ipSource"`           // "outflow" | "firewall log" | ""
+	OtherIPs   []string  `json:"otherIps,omitempty"` // the domain's other outflow-resolved IPs
 	Port       int       `json:"port"`
 	Action     string    `json:"action"` // "allow" | "deny" | "" (DNS only)
 	Evidence   Evidence  `json:"evidence"`
@@ -85,6 +86,7 @@ func Attribute(s model.Snapshot, window time.Duration) []Observation {
 			Evidence: DNSOnly, Hits: l.Count, LastSeen: l.Bin,
 		}
 		o.IP, o.IPSource = res.first(l.Domain)
+		o.OtherIPs = res.others(l.Domain, o.IP, o.IPSource)
 		// A node-IP (hostNetwork) lookup with no firewall match stays on the node row
 		// but is DNS only: nothing shows that traffic left.
 		obs = append(obs, o)
@@ -136,6 +138,21 @@ func (r resolutions) first(domain string) (string, string) {
 		return ips[0].ip, ips[0].source
 	}
 	return "", ""
+}
+
+// others returns the domain's other outflow-resolved IPs besides ip, de-duplicated in
+// input order. It is nil unless ip itself was resolved by outflow: a firewall-log IP is exact.
+func (r resolutions) others(domain, ip, source string) []string {
+	if source != "outflow" {
+		return nil
+	}
+	var out []string
+	for _, x := range r[domain] {
+		if x.source == "outflow" && x.ip != ip && !slices.Contains(out, x.ip) {
+			out = append(out, x.ip)
+		}
+	}
+	return out
 }
 
 // has reports whether domain resolved to ip.
@@ -209,6 +226,7 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res res
 		o := base
 		o.Subject, o.NodeLevel, o.Evidence, o.Domain = nodeSubject(node), true, NodeLevel, domain
 		o.IP, o.IPSource = eventIP(e, domain, res)
+		o.OtherIPs = res.others(domain, o.IP, o.IPSource)
 		return []Observation{o}
 	}
 	unknown := unknownSources(e.Bin, cands, lookups, window)
@@ -217,6 +235,7 @@ func attributeEvent(e model.EgressEvent, node string, lookups []*lookup, res res
 		o := base
 		o.Subject, o.NodeLevel, o.Domain = c.subject, c.nodeLevel, c.domain
 		o.IP, o.IPSource = eventIP(e, c.domain, res)
+		o.OtherIPs = res.others(c.domain, o.IP, o.IPSource)
 		o.Evidence = Confirmed
 		if len(cands) > 1 || len(unknown) > 0 {
 			o.Evidence = Likely
@@ -299,6 +318,11 @@ func merge(obs []Observation) []Observation {
 		}
 		if m.IP == "" {
 			m.IP, m.IPSource = o.IP, o.IPSource
+		}
+		for _, ip := range o.OtherIPs {
+			if !slices.Contains(m.OtherIPs, ip) {
+				m.OtherIPs = append(m.OtherIPs, ip)
+			}
 		}
 		if o.Evidence == Likely && m.Evidence == Confirmed {
 			m.Evidence = Likely

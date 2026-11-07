@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/jbrathwa/outflow/internal/config"
+	"github.com/jbrathwa/outflow/internal/location"
 )
 
 // Status is a destination's or workload's standing against the residency rule.
@@ -31,21 +32,44 @@ func Classify(d Destination, r *config.Residency, workloadID string) (Status, st
 			return Inside, e.Reason
 		}
 	}
-	l := d.Location
+	st, _ := classifyLocations(d, r)
+	return st, ""
+}
+
+// classifyLocations rates the destination's location and each other location on its
+// own. All equal gives that status; any disagreement gives Unknown and true.
+func classifyLocations(d Destination, r *config.Residency) (Status, bool) {
+	st := locationStatus(d, r, d.Location)
+	for _, l := range d.OtherLocations {
+		if locationStatus(d, r, l) != st {
+			return Unknown, true
+		}
+	}
+	return st, false
+}
+
+// locationsDisagree reports whether the destination's locations rate differently.
+func locationsDisagree(d Destination, r *config.Residency) bool {
+	_, dis := classifyLocations(d, r)
+	return dis
+}
+
+// locationStatus rates one location for d, ignoring exceptions.
+func locationStatus(d Destination, r *config.Residency, l location.Location) Status {
 	if !l.Known() {
-		return Unknown, ""
+		return Unknown
 	}
 	if slices.Contains(r.Allow.Countries, l.Country) ||
 		(l.Provider != "" && l.Region != "" && slices.Contains(r.Allow.CloudRegions, l.Provider+":"+l.Region)) {
-		return Inside, ""
+		return Inside
 	}
 	switch {
 	case d.Action == "deny":
-		return OutsideDenied, ""
+		return OutsideDenied
 	case d.Evidence == DNSOnly:
-		return Unknown, "" // looked up only: no proof traffic left
+		return Unknown // looked up only: no proof traffic left
 	}
-	return Outside, ""
+	return Outside
 }
 
 // counts reports whether a destination counts toward workload status and totals.

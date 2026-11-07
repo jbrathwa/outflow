@@ -449,6 +449,22 @@ func destNotes(d analyze.Destination) []string {
 	case "firewall log":
 		add("IP from firewall log")
 	}
+	if len(d.OtherIPs) > 0 {
+		line := "also resolves to: " + strings.Join(d.OtherIPs, ", ")
+		if len(d.OtherLocations) > 0 {
+			var ls []string
+			for _, l := range d.OtherLocations {
+				ls = append(ls, l.String())
+			}
+			line += " (" + strings.Join(ls, ", ") + ")"
+		}
+		if d.Note != "" {
+			line += " — " + d.Note
+		}
+		add(line)
+	} else if d.Note != "" {
+		add(d.Note)
+	}
 	if d.Evidence == analyze.Likely && len(d.AlsoLikely) > 0 {
 		add("also: " + strings.Join(d.AlsoLikely, ", "))
 	}
