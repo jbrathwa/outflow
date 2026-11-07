@@ -1,0 +1,94 @@
+version: 2
+
+project_name: outflow
+
+before:
+  hooks:
+    - go mod tidy
+    - go test -count=1 ./...
+
+builds:
+  - id: outflow
+    main: .
+    binary: outflow
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/jbrathwa/outflow/internal/cli.Version={{ .Version }}
+      - -X github.com/jbrathwa/outflow/internal/cli.Commit={{ .ShortCommit }}
+      - -X github.com/jbrathwa/outflow/internal/cli.Date={{ slice .CommitDate 0 10 }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: outflow
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # outflow_0.1.0_Linux_x86_64.tar.gz, outflow_0.1.0_Darwin_arm64.tar.gz, ...
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: git
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Documentation
+      regexp: '^docs(\(.+\))?!?:'
+      order: 2
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^style:'
+      - '^test(\(.+\))?:'
+      - '^chore(\(.+\))?:'
+
+release:
+  github:
+    owner: jbrathwa
+    name: outflow
+  draft: false
+  prerelease: auto
+
+homebrew_casks:
+  - name: outflow
+    repository:
+      owner: jbrathwa
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/jbrathwa/outflow
+    description: Find which Kubernetes workloads reach the internet and where that traffic goes
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "feat(outflow): release {{ .Tag }}"
+    hooks:
+      post:
+        # The binary is not Apple-signed; clear the download quarantine so macOS lets it run.
+        install_steps: |
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/outflow"]
