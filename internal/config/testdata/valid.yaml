@@ -1,0 +1,8 @@
+residency:
+  allow:
+    countries: [US]
+    cloud_regions: [azure:eastus, azure:westus2]
+  exceptions:
+    - domain: api.stripe.com
+      reason: "Payment processor, DPA signed"
+  unknown_location: warn
