@@ -15,10 +15,45 @@ tells you how sure it is.
 > work today. Running outflow without `--demo` or `--snapshot` exits with an
 > error saying so.
 
-## Try it in 10 seconds
+## Install
+
+**macOS (Homebrew)**
+
+```sh
+brew install jbrathwa/tap/outflow
+```
+
+**Linux** (VMs and CI runners; use `Linux_arm64` on ARM)
+
+```sh
+curl -sSLO https://github.com/jbrathwa/outflow/releases/latest/download/outflow_Linux_x86_64.tar.gz
+curl -sSLO https://github.com/jbrathwa/outflow/releases/latest/download/checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+tar xzf outflow_Linux_x86_64.tar.gz outflow
+sudo install outflow /usr/local/bin/
+```
+
+**Windows** (PowerShell)
+
+```powershell
+Invoke-WebRequest https://github.com/jbrathwa/outflow/releases/latest/download/outflow_Windows_x86_64.zip -OutFile outflow.zip
+Expand-Archive outflow.zip -DestinationPath outflow
+.\outflow\outflow.exe version
+```
+
+**With Go**
 
 ```sh
 go install github.com/jbrathwa/outflow@latest
+```
+
+Every build is on the [releases page](https://github.com/jbrathwa/outflow/releases),
+with a `checksums.txt` to verify downloads. `outflow version` shows the version,
+commit and build date.
+
+## Try it in 10 seconds
+
+```sh
 outflow --demo --demo-rule
 ```
 
@@ -90,6 +125,8 @@ cluster with CoreDNS query logging switched off:
 
 - [Usage guide](docs/usage.md): flags, exit codes, `outflow.yaml`, counting rules, CI example
 - [Demo walkthrough](docs/demo.md): what each demo workload shows and why
+- [Setup guide](docs/setup.md): turning on the data sources outflow reads
+- [Releasing](docs/releasing.md): how a tagged release is built and published
 
 ## How it stays honest
 
