@@ -167,7 +167,7 @@ func TestDetailNotes(t *testing.T) {
 		all.WriteString(m.View())
 		m = press(m, tea.KeyDown)
 	}
-	for _, want := range []string{"server location ≠ data location — check vendor region", "exception:", "IP resolved by outflow", "also:", "(denied)", "egress: no policy selects it (unrestricted)"} {
+	for _, want := range []string{"server location ≠ data location — check vendor region", "exception:", "IP resolved by outflow", "IP from firewall log", "also:", "(denied)", "egress: no policy selects it (unrestricted)"} {
 		if !strings.Contains(all.String(), want) {
 			t.Errorf("no detail view contained %q", want)
 		}

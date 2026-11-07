@@ -438,8 +438,11 @@ func destNotes(d analyze.Destination) []string {
 	if d.Exception != "" {
 		add("exception: " + d.Exception)
 	}
-	if d.IPSource == "outflow" {
+	switch d.IPSource {
+	case "outflow":
 		add("IP resolved by outflow")
+	case "firewall log":
+		add("IP from firewall log")
 	}
 	if d.Evidence == analyze.Likely && len(d.AlsoLikely) > 0 {
 		add("also: " + strings.Join(d.AlsoLikely, ", "))
