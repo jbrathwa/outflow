@@ -339,3 +339,23 @@ func TestLiveTUIRefreshCollectsAgain(t *testing.T) {
 		t.Errorf("reads=%d cov=%q refreshed=%d", e.cluster.reads, cov, len(refreshed.Workloads))
 	}
 }
+
+type failingTokens struct{ calls int }
+
+func (f *failingTokens) Token(context.Context, string) (string, error) {
+	f.calls++
+	return "", errors.New("DefaultAzureCredential: failed to acquire a token")
+}
+
+func TestAzureTokenFailureShowsSignInHint(t *testing.T) {
+	for _, cmd := range []string{"scan", "doctor"} {
+		e := withLive(t, aksState("AKS"), false)
+		ft := &failingTokens{}
+		deps.tokens = func() (azure.TokenSource, error) { e.tokenCalls++; return ft, nil }
+		code, stdout, stderr := run(t, cmd, "--workspace", wsA)
+		want := "outflow: azure sign-in: DefaultAzureCredential: failed to acquire a token (run az login, or set up workload identity in CI)\n"
+		if code != 1 || stdout != "" || stderr != want || ft.calls != 1 {
+			t.Errorf("%s: code=%d calls=%d stdout=%q stderr=%q", cmd, code, ft.calls, stdout, stderr)
+		}
+	}
+}

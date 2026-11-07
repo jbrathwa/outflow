@@ -212,13 +212,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		if cmd == "" && tui == nil {
 			return fail(errors.New("interactive view is not available"))
 		}
-		l, err := c.newLive(cfg)
-		if err != nil {
-			return fail(err)
-		}
 		var stop context.CancelFunc
 		ctx, stop = signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
+		l, err := c.newLive(ctx, cfg)
+		if err != nil {
+			return fail(err)
+		}
 		collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Collect(ctx, l.opt) }
 		if cmd == "doctor" {
 			collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Probe(ctx, l.opt) }

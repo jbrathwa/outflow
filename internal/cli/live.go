@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -69,9 +70,12 @@ type live struct {
 	opt collect.Options
 }
 
+// signInTimeout bounds the eager token fetch that checks the Azure sign-in.
+const signInTimeout = 30 * time.Second
+
 // newLive validates the live flags, then opens the cluster. Azure tokens are only
-// requested once the azure platform is chosen.
-func (c *common) newLive(cfg config.Config) (*live, error) {
+// requested once the azure platform is chosen; ctx is the run's (Ctrl-C) context.
+func (c *common) newLive(ctx context.Context, cfg config.Config) (*live, error) {
 	since, err := collect.ParseSince(c.since)
 	if err != nil {
 		return nil, fmt.Errorf("--since: %w", err)
@@ -114,6 +118,13 @@ func (c *common) newLive(cfg config.Config) (*live, error) {
 				return collect.Platform{}, &signInError{err}
 			}
 			tokens = t
+		}
+		// Building the credential does not sign in; fetch one token now so a missing
+		// login fails the run with a hint instead of every Azure source going "missing".
+		tctx, cancel := context.WithTimeout(ctx, signInTimeout)
+		defer cancel()
+		if _, err := tokens.Token(tctx, azure.ScopeLogAnalytics); err != nil {
+			return collect.Platform{}, &signInError{err}
 		}
 		return azure.NewPlatform(azure.Config{Sources: sources, Tokens: tokens, LAEndpoint: laURL, ARMEndpoint: armURL}), nil
 	}
