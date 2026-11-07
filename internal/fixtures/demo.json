@@ -1,0 +1,1425 @@
+{
+  "schemaVersion": 1,
+  "cluster": {
+    "name": "aks-prod-eus",
+    "context": "aks-prod-eus",
+    "platform": "AKS",
+    "region": "eastus",
+    "cni": "azure-cni-overlay",
+    "policyEngine": "calico",
+    "outboundType": "userDefinedRouting",
+    "firewall": "fw-hub-eus",
+    "podCidrs": [
+      "10.244.0.0/16"
+    ],
+    "serviceCidrs": [
+      "10.0.0.0/16"
+    ],
+    "nodeLocalDns": false,
+    "calicoCrdPolicies": 0
+  },
+  "window": {
+    "start": "2026-11-06T09:00:00Z",
+    "end": "2026-11-07T09:00:00Z"
+  },
+  "workloads": [
+    {
+      "namespace": "payments",
+      "name": "ledger-worker",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "ledger-worker",
+        "app.kubernetes.io/part-of": "payments"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "payments",
+      "name": "payment-api",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "payment-api",
+        "app.kubernetes.io/part-of": "payments"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "analytics",
+      "name": "event-collector",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "event-collector",
+        "app.kubernetes.io/part-of": "analytics"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "ml",
+      "name": "model-fetch",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "model-fetch",
+        "app.kubernetes.io/part-of": "ml-platform"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "flux-system",
+      "name": "source-controller",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "source-controller",
+        "app.kubernetes.io/part-of": "flux"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "shop",
+      "name": "storefront",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "storefront",
+        "app.kubernetes.io/part-of": "shop"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "shop",
+      "name": "cart",
+      "kind": "Deployment",
+      "labels": {
+        "app.kubernetes.io/name": "cart",
+        "app.kubernetes.io/part-of": "shop"
+      },
+      "hostNetwork": false
+    },
+    {
+      "namespace": "monitoring",
+      "name": "node-exporter",
+      "kind": "DaemonSet",
+      "labels": {
+        "app.kubernetes.io/name": "node-exporter",
+        "app.kubernetes.io/part-of": "kube-prometheus"
+      },
+      "hostNetwork": true
+    }
+  ],
+  "pods": [
+    {
+      "namespace": "payments",
+      "name": "ledger-worker-6c9d7f5b8-tq4lz",
+      "workloadId": "payments/ledger-worker",
+      "node": "aks-np1-vmss0001",
+      "ip": "10.244.0.18",
+      "start": "2026-10-29T14:02:11Z",
+      "end": "2026-11-06T21:14:37Z"
+    },
+    {
+      "namespace": "payments",
+      "name": "ledger-worker-6c9d7f5b8-w7kx2",
+      "workloadId": "payments/ledger-worker",
+      "node": "aks-np1-vmss0001",
+      "ip": "10.244.0.23",
+      "start": "2026-11-06T21:13:52Z"
+    },
+    {
+      "namespace": "shop",
+      "name": "storefront-84b6d9c7f4-2mfpn",
+      "workloadId": "shop/storefront",
+      "node": "aks-np1-vmss0001",
+      "ip": "10.244.0.41",
+      "start": "2026-11-03T10:30:04Z"
+    },
+    {
+      "namespace": "shop",
+      "name": "cart-5f7c8d6b9-xr8vd",
+      "workloadId": "shop/cart",
+      "node": "aks-np1-vmss0001",
+      "ip": "10.244.0.57",
+      "start": "2026-11-03T10:31:19Z"
+    },
+    {
+      "namespace": "monitoring",
+      "name": "node-exporter-4hq7c",
+      "workloadId": "monitoring/node-exporter",
+      "node": "aks-np1-vmss0001",
+      "ip": "10.224.0.4",
+      "start": "2026-10-14T06:20:45Z"
+    },
+    {
+      "namespace": "payments",
+      "name": "payment-api-7b5f9c8d6-hz2qj",
+      "workloadId": "payments/payment-api",
+      "node": "aks-np1-vmss0002",
+      "ip": "10.244.1.12",
+      "start": "2026-11-05T15:22:08Z"
+    },
+    {
+      "namespace": "flux-system",
+      "name": "source-controller-6d8b5c7f9-p9tbs",
+      "workloadId": "flux-system/source-controller",
+      "node": "aks-np1-vmss0002",
+      "ip": "10.244.1.30",
+      "start": "2026-10-21T08:00:33Z"
+    },
+    {
+      "namespace": "ml",
+      "name": "model-fetch-5c4f8b7d9-vk6mw",
+      "workloadId": "ml/model-fetch",
+      "node": "aks-np1-vmss0002",
+      "ip": "10.244.1.45",
+      "start": "2026-11-06T07:45:12Z"
+    },
+    {
+      "namespace": "monitoring",
+      "name": "node-exporter-9tmxz",
+      "workloadId": "monitoring/node-exporter",
+      "node": "aks-np1-vmss0002",
+      "ip": "10.224.0.5",
+      "start": "2026-10-14T06:20:47Z"
+    },
+    {
+      "namespace": "analytics",
+      "name": "event-collector-79d6c5f8b-l3nqs",
+      "workloadId": "analytics/event-collector",
+      "node": "aks-np1-vmss0003",
+      "ip": "10.244.2.19",
+      "start": "2026-11-04T09:12:40Z"
+    },
+    {
+      "namespace": "monitoring",
+      "name": "node-exporter-b2wf5",
+      "workloadId": "monitoring/node-exporter",
+      "node": "aks-np1-vmss0003",
+      "ip": "10.224.0.6",
+      "start": "2026-10-14T06:20:44Z"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "aks-np1-vmss0001",
+      "ips": [
+        "10.224.0.4"
+      ]
+    },
+    {
+      "name": "aks-np1-vmss0002",
+      "ips": [
+        "10.224.0.5"
+      ]
+    },
+    {
+      "name": "aks-np1-vmss0003",
+      "ips": [
+        "10.224.0.6"
+      ]
+    }
+  ],
+  "networkPolicies": [
+    {
+      "namespace": "payments",
+      "name": "default-deny-ingress",
+      "podSelector": {},
+      "policyTypes": [
+        "Ingress"
+      ]
+    },
+    {
+      "namespace": "payments",
+      "name": "payment-api-egress",
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "payment-api"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "0.0.0.0/0",
+                "except": [
+                  "10.0.0.0/8",
+                  "172.16.0.0/12",
+                  "192.168.0.0/16"
+                ]
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 443
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "namespace": "analytics",
+      "name": "event-collector-egress",
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "event-collector"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "0.0.0.0/0",
+                "except": [
+                  "10.0.0.0/8",
+                  "172.16.0.0/12",
+                  "192.168.0.0/16"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "namespace": "shop",
+      "name": "storefront-egress",
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "storefront"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "20.60.128.0/24"
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 443
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "namespace": "shop",
+      "name": "cart-egress",
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "cart"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "cart-redis"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6379
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dnsLookups": [
+    {
+      "podIp": "10.244.1.30",
+      "domain": "ghcr.io",
+      "bin": "2026-11-06T09:30:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "github.com",
+      "bin": "2026-11-06T09:30:00Z",
+      "count": 6
+    },
+    {
+      "podIp": "10.244.1.45",
+      "domain": "huggingface.co",
+      "bin": "2026-11-06T09:47:00Z",
+      "count": 8
+    },
+    {
+      "podIp": "10.244.1.45",
+      "domain": "storage.googleapis.com",
+      "bin": "2026-11-06T09:48:00Z",
+      "count": 5
+    },
+    {
+      "podIp": "10.244.1.45",
+      "domain": "models.fetch-hub.example",
+      "bin": "2026-11-06T09:49:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.eu.segment.io",
+      "bin": "2026-11-06T10:00:00Z",
+      "count": 12
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "telemetry.collector.example",
+      "bin": "2026-11-06T10:00:00Z",
+      "count": 2
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "api.stripe.com",
+      "bin": "2026-11-06T10:15:00Z",
+      "count": 18
+    },
+    {
+      "podIp": "10.244.0.18",
+      "domain": "login.microsoftonline.com",
+      "bin": "2026-11-06T11:20:00Z",
+      "count": 6
+    },
+    {
+      "podIp": "10.244.0.18",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "bin": "2026-11-06T11:20:00Z",
+      "count": 14
+    },
+    {
+      "podIp": "10.244.0.41",
+      "domain": "stshopassets.blob.core.windows.net",
+      "bin": "2026-11-06T12:00:00Z",
+      "count": 22
+    },
+    {
+      "podIp": "10.224.0.6",
+      "domain": "packages.microsoft.com",
+      "bin": "2026-11-06T12:34:00Z",
+      "count": 2
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.eu.segment.io",
+      "bin": "2026-11-06T13:00:00Z",
+      "count": 14
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.segment.io",
+      "bin": "2026-11-06T13:00:00Z",
+      "count": 6
+    },
+    {
+      "podIp": "10.244.0.18",
+      "domain": "api.github.com",
+      "bin": "2026-11-06T13:05:00Z",
+      "count": 5
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "api.stripe.com",
+      "bin": "2026-11-06T14:40:00Z",
+      "count": 25
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "hooks.slack.com",
+      "bin": "2026-11-06T14:40:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "ghcr.io",
+      "bin": "2026-11-06T15:30:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "github.com",
+      "bin": "2026-11-06T15:30:00Z",
+      "count": 5
+    },
+    {
+      "podIp": "10.244.0.18",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "bin": "2026-11-06T16:45:00Z",
+      "count": 9
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.eu.segment.io",
+      "bin": "2026-11-06T17:00:00Z",
+      "count": 13
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "telemetry.collector.example",
+      "bin": "2026-11-06T17:00:00Z",
+      "count": 2
+    },
+    {
+      "podIp": "10.244.0.41",
+      "domain": "api.segment.io",
+      "bin": "2026-11-06T18:30:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.0.41",
+      "domain": "stshopassets.blob.core.windows.net",
+      "bin": "2026-11-06T18:30:00Z",
+      "count": 31
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "api.stripe.com",
+      "bin": "2026-11-06T19:05:00Z",
+      "count": 21
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "ghcr.io",
+      "bin": "2026-11-06T21:30:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "github.com",
+      "bin": "2026-11-06T21:30:00Z",
+      "count": 6
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "api.github.com",
+      "bin": "2026-11-06T22:00:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "api.github.com",
+      "bin": "2026-11-06T22:00:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.eu.segment.io",
+      "bin": "2026-11-07T00:30:00Z",
+      "count": 8
+    },
+    {
+      "podIp": "10.224.0.6",
+      "domain": "packages.microsoft.com",
+      "bin": "2026-11-07T00:34:00Z",
+      "count": 2
+    },
+    {
+      "podIp": "10.244.1.45",
+      "domain": "huggingface.co",
+      "bin": "2026-11-07T01:12:00Z",
+      "count": 6
+    },
+    {
+      "podIp": "10.244.1.45",
+      "domain": "storage.googleapis.com",
+      "bin": "2026-11-07T01:13:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.1.45",
+      "domain": "models.fetch-hub.example",
+      "bin": "2026-11-07T01:14:00Z",
+      "count": 2
+    },
+    {
+      "podIp": "10.244.0.23",
+      "domain": "login.microsoftonline.com",
+      "bin": "2026-11-07T02:10:00Z",
+      "count": 5
+    },
+    {
+      "podIp": "10.244.0.23",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "bin": "2026-11-07T02:10:00Z",
+      "count": 11
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "hooks.slack.com",
+      "bin": "2026-11-07T03:20:00Z",
+      "count": 2
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "ghcr.io",
+      "bin": "2026-11-07T03:30:00Z",
+      "count": 4
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "github.com",
+      "bin": "2026-11-07T03:30:00Z",
+      "count": 7
+    },
+    {
+      "podIp": "10.244.0.23",
+      "domain": "api.github.com",
+      "bin": "2026-11-07T05:40:00Z",
+      "count": 7
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "api.github.com",
+      "bin": "2026-11-07T06:00:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.1.30",
+      "domain": "api.github.com",
+      "bin": "2026-11-07T06:00:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.eu.segment.io",
+      "bin": "2026-11-07T06:45:00Z",
+      "count": 11
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "api.segment.io",
+      "bin": "2026-11-07T06:45:00Z",
+      "count": 5
+    },
+    {
+      "podIp": "10.244.2.19",
+      "domain": "telemetry.collector.example",
+      "bin": "2026-11-07T06:45:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.0.23",
+      "domain": "login.microsoftonline.com",
+      "bin": "2026-11-07T07:55:00Z",
+      "count": 7
+    },
+    {
+      "podIp": "10.244.0.23",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "bin": "2026-11-07T07:55:00Z",
+      "count": 16
+    },
+    {
+      "podIp": "10.244.0.41",
+      "domain": "api.segment.io",
+      "bin": "2026-11-07T08:15:00Z",
+      "count": 3
+    },
+    {
+      "podIp": "10.244.0.41",
+      "domain": "stshopassets.blob.core.windows.net",
+      "bin": "2026-11-07T08:15:00Z",
+      "count": 27
+    },
+    {
+      "podIp": "10.244.1.12",
+      "domain": "api.stripe.com",
+      "bin": "2026-11-07T08:30:00Z",
+      "count": 19
+    }
+  ],
+  "egressEvents": [
+    {
+      "nodeIp": "10.224.0.6",
+      "destIp": "51.15.22.140",
+      "protocol": "UDP",
+      "port": 123,
+      "action": "allow",
+      "rule": "aks-egress-net/allow-ntp",
+      "bin": "2026-11-06T09:17:00Z",
+      "count": 4
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "ghcr.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T09:30:00Z",
+      "count": 22
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T09:30:00Z",
+      "count": 64
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "huggingface.co",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-ml-models",
+      "bin": "2026-11-06T09:47:00Z",
+      "count": 214
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "storage.googleapis.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-ml-models",
+      "bin": "2026-11-06T09:48:00Z",
+      "count": 96
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.eu.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T10:00:00Z",
+      "count": 520
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "telemetry.collector.example",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "deny",
+      "rule": "default-deny",
+      "bin": "2026-11-06T10:00:00Z",
+      "count": 6
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "api.stripe.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T10:15:00Z",
+      "count": 402
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "login.microsoftonline.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-entra-id",
+      "bin": "2026-11-06T11:20:00Z",
+      "count": 118
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-06T11:20:00Z",
+      "count": 312
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stshopassets.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-06T12:00:00Z",
+      "count": 845
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "packages.microsoft.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-os-updates",
+      "bin": "2026-11-06T12:34:00Z",
+      "count": 14
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.eu.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T13:00:00Z",
+      "count": 610
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T13:00:00Z",
+      "count": 210
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "destIp": "51.15.22.140",
+      "protocol": "UDP",
+      "port": 123,
+      "action": "allow",
+      "rule": "aks-egress-net/allow-ntp",
+      "bin": "2026-11-06T13:17:00Z",
+      "count": 4
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "api.stripe.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T14:40:00Z",
+      "count": 615
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "hooks.slack.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T14:40:00Z",
+      "count": 38
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "ghcr.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T15:30:00Z",
+      "count": 19
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T15:30:00Z",
+      "count": 58
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-06T16:45:00Z",
+      "count": 287
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.eu.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T17:00:00Z",
+      "count": 580
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "telemetry.collector.example",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "deny",
+      "rule": "default-deny",
+      "bin": "2026-11-06T17:00:00Z",
+      "count": 5
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "destIp": "51.15.22.140",
+      "protocol": "UDP",
+      "port": 123,
+      "action": "allow",
+      "rule": "aks-egress-net/allow-ntp",
+      "bin": "2026-11-06T17:17:00Z",
+      "count": 4
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "api.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "deny",
+      "rule": "default-deny",
+      "bin": "2026-11-06T18:30:00Z",
+      "count": 12
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stshopassets.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-06T18:30:00Z",
+      "count": 1210
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "api.stripe.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-06T19:05:00Z",
+      "count": 538
+    },
+    {
+      "nodeIp": "10.225.0.4",
+      "domain": "api.github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T20:00:00Z",
+      "count": 15
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "destIp": "51.15.22.140",
+      "protocol": "UDP",
+      "port": 123,
+      "action": "allow",
+      "rule": "aks-egress-net/allow-ntp",
+      "bin": "2026-11-06T21:17:00Z",
+      "count": 4
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "ghcr.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T21:30:00Z",
+      "count": 24
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T21:30:00Z",
+      "count": 61
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "api.github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-06T22:00:00Z",
+      "count": 9
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.eu.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-07T00:30:00Z",
+      "count": 340
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "packages.microsoft.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-os-updates",
+      "bin": "2026-11-07T00:34:00Z",
+      "count": 11
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "huggingface.co",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-ml-models",
+      "bin": "2026-11-07T01:12:00Z",
+      "count": 187
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "storage.googleapis.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-ml-models",
+      "bin": "2026-11-07T01:13:00Z",
+      "count": 88
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "destIp": "51.15.22.140",
+      "protocol": "UDP",
+      "port": 123,
+      "action": "allow",
+      "rule": "aks-egress-net/allow-ntp",
+      "bin": "2026-11-07T01:17:00Z",
+      "count": 4
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "login.microsoftonline.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-entra-id",
+      "bin": "2026-11-07T02:10:00Z",
+      "count": 104
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-07T02:10:00Z",
+      "count": 296
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "hooks.slack.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-07T03:20:00Z",
+      "count": 21
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "ghcr.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-07T03:30:00Z",
+      "count": 20
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-07T03:30:00Z",
+      "count": 66
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "destIp": "51.15.22.140",
+      "protocol": "UDP",
+      "port": 123,
+      "action": "allow",
+      "rule": "aks-egress-net/allow-ntp",
+      "bin": "2026-11-07T05:17:00Z",
+      "count": 4
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "api.github.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-github",
+      "bin": "2026-11-07T06:01:00Z",
+      "count": 7
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.eu.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-07T06:45:00Z",
+      "count": 495
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "api.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-07T06:45:00Z",
+      "count": 190
+    },
+    {
+      "nodeIp": "10.224.0.6",
+      "domain": "telemetry.collector.example",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "deny",
+      "rule": "default-deny",
+      "bin": "2026-11-07T06:45:00Z",
+      "count": 7
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "login.microsoftonline.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-entra-id",
+      "bin": "2026-11-07T07:55:00Z",
+      "count": 122
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stledgerweu.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-07T07:55:00Z",
+      "count": 341
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "api.segment.io",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "deny",
+      "rule": "default-deny",
+      "bin": "2026-11-07T08:15:00Z",
+      "count": 9
+    },
+    {
+      "nodeIp": "10.224.0.4",
+      "domain": "stshopassets.blob.core.windows.net",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-azure-storage",
+      "bin": "2026-11-07T08:15:00Z",
+      "count": 978
+    },
+    {
+      "nodeIp": "10.224.0.5",
+      "domain": "api.stripe.com",
+      "protocol": "HTTPS",
+      "port": 443,
+      "action": "allow",
+      "rule": "aks-egress-app/allow-saas",
+      "bin": "2026-11-07T08:30:00Z",
+      "count": 471
+    }
+  ],
+  "resolutions": [
+    {
+      "domain": "stledgerweu.blob.core.windows.net",
+      "ips": [
+        "20.60.40.4"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "login.microsoftonline.com",
+      "ips": [
+        "20.190.151.68",
+        "20.190.151.70"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "api.github.com",
+      "ips": [
+        "140.82.112.5"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "stshopassets.blob.core.windows.net",
+      "ips": [
+        "20.60.128.36"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "api.segment.io",
+      "ips": [
+        "54.145.112.20"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "api.stripe.com",
+      "ips": [
+        "3.218.180.12"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "hooks.slack.com",
+      "ips": [
+        "3.211.44.9"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "github.com",
+      "ips": [
+        "140.82.112.3"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "ghcr.io",
+      "ips": [
+        "140.82.114.33"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "huggingface.co",
+      "ips": [
+        "13.33.30.71"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "storage.googleapis.com",
+      "ips": [
+        "142.250.80.27",
+        "142.251.16.207"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "models.fetch-hub.example",
+      "ips": [
+        "52.210.17.44"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "api.eu.segment.io",
+      "ips": [
+        "52.209.81.3",
+        "52.211.4.190"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "telemetry.collector.example",
+      "ips": [
+        "51.15.88.12"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    },
+    {
+      "domain": "packages.microsoft.com",
+      "ips": [
+        "40.71.11.157"
+      ],
+      "source": "outflow",
+      "at": "2026-11-07T08:58:00Z"
+    }
+  ],
+  "sources": [
+    {
+      "id": "k8s-api",
+      "state": "ok",
+      "detail": "read-only access to aks-prod-eus",
+      "lastRecord": "2026-11-07T09:00:00Z"
+    },
+    {
+      "id": "firewall-logs",
+      "state": "ok",
+      "detail": "fw-hub-eus → law-hub-eus (AZFWApplicationRule, AZFWNetworkRule)",
+      "lastRecord": "2026-11-07T08:55:00Z"
+    },
+    {
+      "id": "coredns-log-plugin",
+      "state": "ok",
+      "detail": "log enabled in coredns-custom",
+      "lastRecord": "2026-11-07T09:00:00Z"
+    },
+    {
+      "id": "coredns-logs-collected",
+      "state": "ok",
+      "detail": "CoreDNS query lines in ContainerLogV2 (law-hub-eus)",
+      "lastRecord": "2026-11-07T08:58:00Z"
+    },
+    {
+      "id": "pod-inventory",
+      "state": "ok",
+      "detail": "KubePodInventory in law-hub-eus",
+      "lastRecord": "2026-11-07T08:59:00Z"
+    }
+  ]
+}

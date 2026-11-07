@@ -69,6 +69,11 @@ func LoadDefault(dir string) (Config, error) {
 	return Load(p)
 }
 
+// Parse validates config YAML held in memory, such as an embedded file.
+func Parse(data []byte) (Config, error) {
+	return parse(data)
+}
+
 func parse(b []byte) (Config, error) {
 	var c Config
 	dec := yaml.NewDecoder(bytes.NewReader(b))

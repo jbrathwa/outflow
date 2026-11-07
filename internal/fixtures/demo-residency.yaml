@@ -1,0 +1,7 @@
+# Residency rule for the built-in demo: traffic must stay in the US.
+residency:
+  allow:
+    countries: [US]
+  exceptions:
+    - domain: api.stripe.com
+      reason: "Payment processor, DPA signed"
