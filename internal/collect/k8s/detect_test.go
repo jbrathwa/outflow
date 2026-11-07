@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -223,6 +224,74 @@ func TestCoreDNSCorefileNotUsedOnAKS(t *testing.T) {
 	cs := fake.NewSimpleClientset(cm("kube-system", "coredns", map[string]string{"Corefile": ".:53 {\n log\n}\n"}))
 	s := plugin(t, cs, []corev1.Node{aksNode(nil)})
 	if s.State != "missing" {
+		t.Fatalf("got %+v", s)
+	}
+}
+
+func TestDetectCalicoCRDServerErrorFlagged(t *testing.T) {
+	dyn := dynfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), calicoGVRs)
+	dyn.PrependReactor("list", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewInternalError(errors.New("secret backend detail"))
+	})
+	_, ss := detect(context.Background(), fake.NewSimpleClientset(), dyn, nil)
+	s, ok := srcByID(ss, model.SrcK8sAPI)
+	if !ok || s.State != "warn" || s.Detail != "Calico policies not readable" || strings.Contains(s.Detail, "secret") {
+		t.Fatalf("got %+v", ss)
+	}
+}
+
+func TestDetectCalicoPartialFlagged(t *testing.T) {
+	dyn := dynfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), calicoGVRs, calicoObj("NetworkPolicy", "shop", "a"))
+	dyn.PrependReactor("list", "globalnetworkpolicies", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewTimeoutError("slow", 1)
+	})
+	c, ss := detect(context.Background(), fake.NewSimpleClientset(), dyn, nil)
+	if _, ok := srcByID(ss, model.SrcK8sAPI); !ok || c.CalicoCRDPolicies != 1 {
+		t.Fatalf("got %d %+v", c.CalicoCRDPolicies, ss)
+	}
+}
+
+func TestDetectDaemonSetForbiddenNoted(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	cs.PrependReactor("get", "daemonsets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "daemonsets"}, "x", nil)
+	})
+	c, ss := detect(context.Background(), cs, nil, nil)
+	s, ok := srcByID(ss, model.SrcK8sAPI)
+	if c.PolicyEngine != "" || c.CNI != "" || c.NodeLocalDNS || !ok || s.State != "warn" ||
+		!strings.Contains(s.Detail, "DaemonSet check failed: calico-node") || !strings.Contains(s.Detail, "DaemonSet check failed: node-local-dns") {
+		t.Fatalf("got %+v %+v", c, ss)
+	}
+	if strings.Count(s.Detail, "DaemonSet check failed: calico-node") != 1 {
+		t.Fatalf("duplicate note: %q", s.Detail)
+	}
+}
+
+func TestReadMergesDetectNote(t *testing.T) {
+	dyn := dynfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), calicoGVRs)
+	dyn.PrependReactor("list", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "networkpolicies"}, "", nil)
+	})
+	st, err := NewFromClients(fake.NewSimpleClientset(), dyn, "ctx1").Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := srcByID(st.Sources, model.SrcK8sAPI)
+	if s.State != "warn" || !strings.HasSuffix(s.Detail, "; Calico policies not readable") {
+		t.Fatalf("got %+v", st.Sources)
+	}
+	if n := len(st.Sources); n != 2 {
+		t.Fatalf("want k8s-api + coredns plugin, got %+v", st.Sources)
+	}
+}
+
+func TestCoreDNSCorefileFallbackDetails(t *testing.T) {
+	s := plugin(t, fake.NewSimpleClientset(cm("kube-system", "coredns", map[string]string{"Corefile": ".:53 {\n errors\n}\n"})), nil)
+	if s.State != "missing" || s.Detail != "coredns-custom ConfigMap not found; Corefile has no log plugin" {
+		t.Fatalf("got %+v", s)
+	}
+	s = plugin(t, fake.NewSimpleClientset(), nil)
+	if s.Detail != "coredns-custom ConfigMap not found; Corefile not readable" {
 		t.Fatalf("got %+v", s)
 	}
 }

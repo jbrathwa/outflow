@@ -41,11 +41,30 @@ func detect(ctx context.Context, cs kubernetes.Interface, dyn dynamic.Interface,
 		c.Region = aksNode.Labels["topology.kubernetes.io/region"]
 	}
 
+	var notes []string
+	addNote := func(n string) {
+		for _, e := range notes {
+			if e == n {
+				return
+			}
+		}
+		notes = append(notes, n)
+	}
+	// hasDS is true only when the DaemonSet exists. NotFound means absent; any other error
+	// (forbidden, timeout, 5xx) is reported as a note and the answer is "not detected".
 	hasDS := func(name string, namespaces ...string) bool {
+		failed := false
 		for _, ns := range namespaces {
-			if _, err := cs.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
+			_, err := cs.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
+			if err == nil {
 				return true
 			}
+			if !apierrors.IsNotFound(err) {
+				failed = true
+			}
+		}
+		if failed {
+			addNote("DaemonSet check failed: " + name)
 		}
 		return false
 	}
@@ -89,7 +108,7 @@ func detect(ctx context.Context, cs kubernetes.Interface, dyn dynamic.Interface,
 
 	// Calico CRD policies.
 	if dyn != nil {
-		forbidden := false
+		failed := false
 		for _, gvr := range calicoCRDs {
 			err := listAll(func(o metav1.ListOptions) (string, error) {
 				l, err := dyn.Resource(gvr).List(ctx, o)
@@ -99,13 +118,17 @@ func detect(ctx context.Context, cs kubernetes.Interface, dyn dynamic.Interface,
 				c.CalicoCRDPolicies += len(l.Items)
 				return l.GetContinue(), nil
 			})
-			if apierrors.IsForbidden(err) {
-				forbidden = true
+			// Only NotFound (CRD absent) is silent; anything else may hide policies.
+			if err != nil && !apierrors.IsNotFound(err) {
+				failed = true
 			}
 		}
-		if forbidden {
-			out = append(out, model.SourceStatus{ID: model.SrcK8sAPI, State: "warn", Detail: "Calico policies not readable"})
+		if failed {
+			addNote("Calico policies not readable")
 		}
+	}
+	if len(notes) > 0 {
+		out = append(out, model.SourceStatus{ID: model.SrcK8sAPI, State: "warn", Detail: strings.Join(notes, "; ")})
 	}
 
 	out = append(out, corednsPlugin(ctx, cs, aksNode != nil))
@@ -146,9 +169,37 @@ func corednsPlugin(ctx context.Context, cs kubernetes.Interface, aks bool) model
 		st.State, st.Detail = "warn", "coredns-custom: "+err.Error()
 	}
 	if !aks {
-		if core, err := cs.CoreV1().ConfigMaps("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); err == nil && hasLogLine(core.Data["Corefile"]) {
+		core, err := cs.CoreV1().ConfigMaps("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
+		switch {
+		case err != nil:
+			st.Detail += "; Corefile not readable"
+		case hasLogLine(core.Data["Corefile"]):
 			st.State, st.Detail = "ok", "log plugin on (coredns Corefile)"
+		default:
+			st.Detail += "; Corefile has no log plugin"
 		}
 	}
 	return st
+}
+
+// mergeDetect folds detect's statuses into sources: a k8s-api note is appended to the existing
+// k8s-api entry (state warn) and everything else is added as its own source. Probe reuses this.
+func mergeDetect(sources, det []model.SourceStatus) []model.SourceStatus {
+	for _, d := range det {
+		merged := false
+		if d.ID == model.SrcK8sAPI {
+			for i := range sources {
+				if sources[i].ID == model.SrcK8sAPI {
+					sources[i].State = "warn"
+					sources[i].Detail += "; " + d.Detail
+					merged = true
+					break
+				}
+			}
+		}
+		if !merged {
+			sources = append(sources, d)
+		}
+	}
+	return sources
 }

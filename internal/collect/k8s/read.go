@@ -291,14 +291,7 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 	st.Cluster.Platform, st.Cluster.Region, st.Cluster.CNI = det.Platform, det.Region, det.CNI
 	st.Cluster.PolicyEngine, st.Cluster.NodeLocalDNS, st.Cluster.CalicoCRDPolicies = det.PolicyEngine, det.NodeLocalDNS, det.CalicoCRDPolicies
 	st.Sources = []model.SourceStatus{src}
-	for _, d := range detSrc {
-		if d.ID == model.SrcK8sAPI {
-			st.Sources[0].State = "warn"
-			st.Sources[0].Detail += "; " + d.Detail
-			continue
-		}
-		st.Sources = append(st.Sources, d)
-	}
+	st.Sources = mergeDetect(st.Sources, detSrc)
 	return st, nil
 }
 
