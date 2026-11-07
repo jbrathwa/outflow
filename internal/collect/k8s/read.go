@@ -59,7 +59,7 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 		if apierrors.IsForbidden(err) {
 			warns = append(warns, kind+" forbidden")
 		} else {
-			warns = append(warns, kind+": "+err.Error())
+			warns = append(warns, "list "+kind+" failed")
 		}
 	}
 

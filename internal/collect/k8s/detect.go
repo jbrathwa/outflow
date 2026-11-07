@@ -166,7 +166,7 @@ func corednsPlugin(ctx context.Context, cs kubernetes.Interface, aks bool) model
 	case apierrors.IsForbidden(err):
 		st.State, st.Detail = "warn", "not readable"
 	default:
-		st.State, st.Detail = "warn", "coredns-custom: "+err.Error()
+		st.State, st.Detail = "warn", "get coredns-custom failed"
 	}
 	if !aks {
 		core, err := cs.CoreV1().ConfigMaps("kube-system").Get(ctx, "coredns", metav1.GetOptions{})

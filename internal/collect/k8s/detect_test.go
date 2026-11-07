@@ -295,3 +295,14 @@ func TestCoreDNSCorefileFallbackDetails(t *testing.T) {
 		t.Fatalf("got %+v", s)
 	}
 }
+
+func TestCoreDNSCustomServerErrorHidesRawText(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewInternalError(errors.New("secret backend detail"))
+	})
+	s := plugin(t, cs, []corev1.Node{aksNode(nil)})
+	if s.State != "warn" || s.Detail != "get coredns-custom failed" {
+		t.Fatalf("got %+v", s)
+	}
+}

@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -323,5 +324,19 @@ func TestReadNodeResourceGroupLabel(t *testing.T) {
 	}
 	if st.NodeResourceGroup != "MC_rg_aks-prod-eus_eastus" {
 		t.Fatalf("probe node resource group %q", st.NodeResourceGroup)
+	}
+}
+
+func TestReadOptionalKindErrorHidesRawText(t *testing.T) {
+	cs := fake.NewSimpleClientset(pod("a", "p", "10.0.0.1", nil))
+	cs.PrependReactor("list", "statefulsets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewInternalError(errors.New("secret backend detail"))
+	})
+	st, err := NewFromClients(cs, nil, "c").Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := st.Sources[0]; s.State != "warn" || !strings.Contains(s.Detail, "incomplete: list statefulsets failed") || strings.Contains(s.Detail, "secret") {
+		t.Fatalf("source: %+v", s)
 	}
 }
