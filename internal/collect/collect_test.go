@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbrathwa/outflow/internal/analyze"
 	"github.com/jbrathwa/outflow/internal/model"
 )
 
@@ -241,5 +242,38 @@ func TestMergePodsLiveWins(t *testing.T) {
 	got := mergePods(live, hist)
 	if len(got) != 2 || got[0].WorkloadID != "live" || got[1].IP != "10.0.0.2" {
 		t.Errorf("%+v", got)
+	}
+}
+
+func TestMergeLiveWins(t *testing.T) {
+	t0 := time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)
+	live := []model.Pod{{Namespace: "shop", Name: "api-1", IP: "10.244.1.9", WorkloadID: "shop/api", Start: t0}}
+	hist := []model.Pod{
+		{Namespace: "shop", Name: "api-1", IP: "10.244.1.9", WorkloadID: "shop/stale", Start: t0.Add(-time.Hour), End: t0.Add(time.Minute)},
+		{Namespace: "shop", Name: "old-1", IP: "10.244.1.8", WorkloadID: "shop/old", Start: t0.Add(-time.Hour), End: t0},
+	}
+	got := mergePods(live, hist)
+	if len(got) != 2 || got[0].WorkloadID != "shop/api" || !got[0].End.IsZero() || got[1].Name != "old-1" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestMergeReusedIPByTime(t *testing.T) {
+	day := func(h, m int) time.Time { return time.Date(2026, 11, 7, h, m, 0, 0, time.UTC) }
+	live := []model.Pod{{Namespace: "shop", Name: "b-1", IP: "10.244.1.9", WorkloadID: "shop/b", Start: day(10, 40)}}
+	hist := []model.Pod{{Namespace: "shop", Name: "a-1", IP: "10.244.1.9", WorkloadID: "shop/a", Start: day(10, 0), End: day(10, 30)}}
+	snap := model.Snapshot{
+		Pods: mergePods(live, hist),
+		DNSLookups: []model.DNSLookup{
+			{PodIP: "10.244.1.9", Domain: "api.example.com", Bin: day(10, 20), Count: 1},
+			{PodIP: "10.244.1.9", Domain: "api.example.com", Bin: day(10, 45), Count: 1},
+		},
+	}
+	subjects := map[string]bool{}
+	for _, o := range analyze.Attribute(snap, analyze.DefaultJoinWindow) {
+		subjects[o.Subject] = true
+	}
+	if len(subjects) != 2 || !subjects["shop/a"] || !subjects["shop/b"] {
+		t.Fatalf("%v", subjects)
 	}
 }

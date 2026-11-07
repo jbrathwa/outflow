@@ -48,13 +48,19 @@ func dnsSampleKQL(w model.Window, nodes []string) string {
 
 // queryFailure maps a query error to a status with a fixed phrase; raw error text is never used.
 func queryFailure(id, ws string, err error) model.SourceStatus {
+	return tableFailure(id, ws, err, "ContainerLogV2 not found in workspace %s (enable Container Insights with ContainerLogV2 and include kube-system)")
+}
+
+// tableFailure is queryFailure with the missing-table message for the queried table
+// (noTableFmt takes the masked workspace).
+func tableFailure(id, ws string, err error, noTableFmt string) model.SourceStatus {
 	mask := collect.MaskID(ws)
 	var qe *QueryError
 	switch {
 	case errors.As(err, &qe) && qe.Forbidden():
 		return model.SourceStatus{ID: id, State: "missing", Detail: fmt.Sprintf("no access to workspace %s (needs Log Analytics Reader)", mask)}
 	case errors.As(err, &qe) && qe.NoTable():
-		return model.SourceStatus{ID: id, State: "missing", Detail: fmt.Sprintf("ContainerLogV2 not found in workspace %s (enable Container Insights with ContainerLogV2 and include kube-system)", mask)}
+		return model.SourceStatus{ID: id, State: "missing", Detail: fmt.Sprintf(noTableFmt, mask)}
 	}
 	return model.SourceStatus{ID: id, State: "missing", Detail: fmt.Sprintf("query failed (workspace %s)", mask)}
 }
