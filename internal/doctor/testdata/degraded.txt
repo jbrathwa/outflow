@@ -1,0 +1,33 @@
+outflow doctor  context aks-prod-eus · profile azure
+
+Cluster
+  ✔ Kubernetes API          read-only access to aks-prod-eus
+  ✔ Platform                AKS · eastus
+  ✔ CNI                     Azure CNI Overlay
+    pods leave with node IPs → workload names come from DNS logs
+  ✔ NetworkPolicy engine    Calico
+
+Traffic
+  ✔ Outbound path           userDefinedRouting → Azure Firewall fw-hub-eus
+  ✔ Firewall logs           fw-hub-eus → law-hub-eus (AZFWApplicationRule, AZFWNetworkRule)
+  ✖ CoreDNS query logs      log plugin not enabled in coredns-custom
+    fix: add `log` to the coredns-custom ConfigMap (docs/setup.md#coredns)
+    without it: destinations only per node, not per workload
+  ✖ Log collection          no CoreDNS query lines in ContainerLogV2
+    fix: include kube-system in the Container Insights data collection rule
+    without it: destinations only per node, not per workload
+  ✔ Pod inventory           KubePodInventory in law-hub-eus
+
+Location
+  ✔ Cloud IP ranges         seed-2026-11-07
+  ✔ GeoIP database          country ranges loaded
+
+Residency
+  ✔ Rule                    outflow.yaml · allow US · 1 exception
+
+Access  (least privilege)
+  · checked in live mode
+
+Coverage  PARTIAL
+  can:    which workloads may reach the internet · what left via the firewall, per node
+  cannot: which workload made each call → enable CoreDNS logs
