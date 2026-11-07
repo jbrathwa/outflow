@@ -173,10 +173,23 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 		fw.Required, plug.Required, coll.Required = true, true, true
 	}
 
-	traffic := []Check{outbound, fw, plug, coll, pods}
-	if c.NodeLocalDNS {
-		traffic = append(traffic, Check{Name: "NodeLocal DNS", State: Fail, Detail: "workload attribution unavailable",
-			Why:     "NodeLocal DNS Cache hides which pod sent each query from CoreDNS logs",
+	traffic := []Check{outbound, fw, plug, coll}
+	if _, ok := src(model.SrcCoreDNSFormat); ok {
+		traffic = append(traffic, fromSource(model.SrcCoreDNSFormat, "CoreDNS log format", "",
+			"some CoreDNS lines may be missed", "check the CoreDNS log format"))
+	}
+	traffic = append(traffic, pods)
+	localDNS := c.NodeLocalDNS || c.AKSLocalDNS
+	if localDNS {
+		var found []string
+		if c.NodeLocalDNS {
+			found = append(found, "NodeLocal DNSCache found")
+		}
+		if c.AKSLocalDNS {
+			found = append(found, "AKS LocalDNS enabled")
+		}
+		traffic = append(traffic, Check{Name: "Local DNS cache", State: Fail, Detail: strings.Join(found, " · "),
+			Why:     "a node-local DNS cache hides which pod sent each query from CoreDNS logs",
 			Without: dnsWithout, Required: snat})
 	}
 
@@ -206,19 +219,49 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 		profile = "azure"
 	}
 
+	clusterChecks := []Check{api, platform, cni, policy}
+	if _, ok := src(model.SrcAKS); ok {
+		clusterChecks = append(clusterChecks, fromSource(model.SrcAKS, "AKS resource", "",
+			"AKS settings (outbound type, LocalDNS) are not read from Azure",
+			"grant Reader on the AKS resource (docs/setup.md#roles)"))
+	}
+
 	r := Result{
 		Profile: profile,
 		Context: c.Context,
 		Groups: []Group{
-			{Name: "Cluster", Checks: []Check{api, platform, cni, policy}},
+			{Name: "Cluster", Checks: clusterChecks},
 			{Name: "Traffic", Checks: traffic},
 			{Name: "Location", Checks: loc},
 			{Name: "Residency", Checks: []Check{res}},
-			{Name: "Access", Checks: []Check{{State: Info, Detail: "checked in live mode"}}},
+			{Name: "Access", Checks: accessChecks(src, fromSource)},
 		},
 	}
-	r.Coverage = coverage(traffic, available(fw.State), dnsAvail, c.NodeLocalDNS)
+	r.Coverage = coverage(traffic, available(fw.State), dnsAvail, localDNS)
 	return r
+}
+
+// accessChecks builds the Access group: one check per live access source,
+// or a single info line for demo and snapshot data that carries none.
+func accessChecks(src func(string) (model.SourceStatus, bool),
+	fromSource func(id, name, why, without, fix string) Check) []Check {
+	_, k8s := src(model.SrcK8sAccess)
+	_, az := src(model.SrcAzureAccess)
+	if !k8s && !az {
+		return []Check{{State: Info, Detail: "checked in live mode"}}
+	}
+	notChecked := func(name string) Check { return Check{Name: name, State: Info, Detail: "not checked"} }
+	kc, ac := notChecked("Kubernetes"), notChecked("Azure")
+	if k8s {
+		kc = fromSource(model.SrcK8sAccess, "Kubernetes", "", "some cluster data cannot be read",
+			"apply deploy/clusterrole.yaml (docs/usage.md#permissions)")
+		kc.Required = true
+	}
+	if az {
+		ac = fromSource(model.SrcAzureAccess, "Azure", "", "no firewall or DNS logs can be queried",
+			"grant Log Analytics Reader on the workspace (docs/setup.md#roles)")
+	}
+	return []Check{kc, ac}
 }
 
 // available reports whether a source delivers data: ok, or warn (degraded).
@@ -269,8 +312,10 @@ func coverage(traffic []Check, fwOK, dnsOK, nodeLocal bool) Coverage {
 			add("which workload made each call → enable CoreDNS logs")
 		case "Pod inventory":
 			add("workloads for pods that no longer exist → enable Container Insights")
-		case "NodeLocal DNS":
-			add("which workload made each call → NodeLocal DNS hides the client pod")
+		case "CoreDNS log format":
+			add("some CoreDNS lines may be missed → check the CoreDNS log format")
+		case "Local DNS cache":
+			add("which workload made each call → a node-local DNS cache hides the client pod")
 		}
 	}
 	return cv

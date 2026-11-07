@@ -124,8 +124,8 @@ func TestDoctorNodeLocalDNS(t *testing.T) {
 	s, _ := fixtures.Demo()
 	s.Cluster.NodeLocalDNS = true
 	r := Run(s, db(t), demoCfg(t), true)
-	c := find(t, r, "NodeLocal DNS")
-	if c.State != Fail || c.Detail != "workload attribution unavailable" {
+	c := find(t, r, "Local DNS cache")
+	if c.State != Fail || c.Detail != "NodeLocal DNSCache found" {
 		t.Errorf("nodelocal = %+v", c)
 	}
 	if r.Coverage.Level != Partial {
@@ -143,12 +143,12 @@ func TestDoctorNodeLocalDNSRequiredWhenSNAT(t *testing.T) {
 	s, _ := fixtures.Demo() // azure-cni-overlay: pods leave with node IPs
 	s.Cluster.NodeLocalDNS = true
 	r := Run(s, db(t), demoCfg(t), true)
-	if !find(t, r, "NodeLocal DNS").Required || !r.Failed() {
+	if !find(t, r, "Local DNS cache").Required || !r.Failed() {
 		t.Error("NodeLocal DNS on an overlay CNI hides attribution and must fail doctor")
 	}
 	s.Cluster.CNI = "azure"
 	r = Run(s, db(t), demoCfg(t), true)
-	if find(t, r, "NodeLocal DNS").Required || r.Failed() {
+	if find(t, r, "Local DNS cache").Required || r.Failed() {
 		t.Error("NodeLocal DNS on a non-SNAT CNI only degrades coverage")
 	}
 }
@@ -247,5 +247,126 @@ func TestDoctorPartialExplainsOutboundAndInventory(t *testing.T) {
 	r = Run(s, db(t), demoCfg(t), true)
 	if r.Coverage.Level != Partial || !strings.Contains(strings.Join(r.Coverage.Cannot, "\n"), "pods that no longer exist") {
 		t.Errorf("inventory: level=%s cannot=%v", r.Coverage.Level, r.Coverage.Cannot)
+	}
+}
+
+func TestDoctorAKSLocalDNSFails(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Cluster.AKSLocalDNS = true
+	r := Run(s, db(t), demoCfg(t), true)
+	c := find(t, r, "Local DNS cache")
+	if c.State != Fail || c.Detail != "AKS LocalDNS enabled" || !c.Required || !r.Failed() {
+		t.Errorf("aks localdns = %+v failed=%v", c, r.Failed())
+	}
+	if !strings.Contains(c.Why, "hides which pod sent each query") {
+		t.Errorf("why = %q", c.Why)
+	}
+	if !strings.Contains(strings.Join(r.Coverage.Cannot, "\n"), "a node-local DNS cache hides the client pod") {
+		t.Errorf("cannot = %v", r.Coverage.Cannot)
+	}
+}
+
+func TestDoctorNodeLocalStillFails(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Cluster.NodeLocalDNS = true
+	r := Run(s, db(t), demoCfg(t), true)
+	c := find(t, r, "Local DNS cache")
+	if c.State != Fail || c.Detail != "NodeLocal DNSCache found" {
+		t.Errorf("nodelocal = %+v", c)
+	}
+}
+
+func TestDoctorLogFormatWarnIsPartial(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Sources = append(s.Sources, model.SourceStatus{ID: model.SrcCoreDNSFormat, State: "warn", Detail: "2 of 20 lines unparsed"})
+	r := Run(s, db(t), demoCfg(t), true)
+	c := find(t, r, "CoreDNS log format")
+	if c.State != Warn || c.Required {
+		t.Errorf("format = %+v", c)
+	}
+	if r.Coverage.Level != Partial {
+		t.Errorf("level = %s, want PARTIAL", r.Coverage.Level)
+	}
+	if !strings.Contains(strings.Join(r.Coverage.Cannot, "\n"), "some CoreDNS lines may be missed → check the CoreDNS log format") {
+		t.Errorf("cannot = %v", r.Coverage.Cannot)
+	}
+	// order: right after Log collection
+	var names []string
+	for _, ck := range r.Groups[1].Checks {
+		names = append(names, ck.Name)
+	}
+	for i, n := range names {
+		if n == "Log collection" && names[i+1] != "CoreDNS log format" {
+			t.Errorf("order = %v", names)
+		}
+	}
+	s2, _ := fixtures.Demo()
+	r2 := Run(s2, db(t), demoCfg(t), true)
+	for _, g := range r2.Groups {
+		for _, ck := range g.Checks {
+			if ck.Name == "CoreDNS log format" || ck.Name == "AKS resource" {
+				t.Errorf("%s must be absent without its source", ck.Name)
+			}
+		}
+	}
+}
+
+func TestDoctorAKSResource(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Sources = append(s.Sources, model.SourceStatus{ID: model.SrcAKS, State: "missing", Detail: "no Reader on the AKS resource"})
+	r := Run(s, db(t), demoCfg(t), true)
+	c := find(t, r, "AKS resource")
+	if c.State != Fail || c.Required {
+		t.Errorf("aks = %+v", c)
+	}
+	g := r.Groups[0]
+	if g.Name != "Cluster" || g.Checks[len(g.Checks)-1].Name != "AKS resource" {
+		t.Errorf("AKS resource must end the Cluster group: %+v", g.Checks)
+	}
+	if r.Coverage.Level != Full {
+		t.Errorf("level = %s", r.Coverage.Level)
+	}
+}
+
+func TestDoctorAccessFromSources(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Sources = append(s.Sources,
+		model.SourceStatus{ID: model.SrcK8sAccess, State: "ok", Detail: "all read permissions granted"},
+		model.SourceStatus{ID: model.SrcAzureAccess, State: "missing", Detail: "cannot query the workspace"})
+	r := Run(s, db(t), demoCfg(t), true)
+	k := find(t, r, "Kubernetes")
+	a := find(t, r, "Azure")
+	if k.State != OK || !k.Required {
+		t.Errorf("k8s = %+v", k)
+	}
+	if a.State != Fail || a.Required || !strings.Contains(a.Fix, "Log Analytics Reader on the workspace (docs/setup.md#roles)") {
+		t.Errorf("azure = %+v", a)
+	}
+	if r.Failed() {
+		t.Error("azure access must not fail doctor")
+	}
+}
+
+func TestDoctorAccessAbsentIsInfo(t *testing.T) {
+	s, _ := fixtures.Demo()
+	r := Run(s, db(t), demoCfg(t), true)
+	g := r.Groups[len(r.Groups)-1]
+	if g.Name != "Access" || len(g.Checks) != 1 || g.Checks[0].State != Info || g.Checks[0].Detail != "checked in live mode" {
+		t.Errorf("access = %+v", g)
+	}
+	s.Sources = append(s.Sources, model.SourceStatus{ID: model.SrcK8sAccess, State: "ok", Detail: "ok"})
+	r = Run(s, db(t), demoCfg(t), true)
+	if az := find(t, r, "Azure"); az.State != Info || az.Detail != "not checked" {
+		t.Errorf("azure = %+v", az)
+	}
+}
+
+func TestDoctorK8sAccessMissingFails(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Sources = append(s.Sources, model.SourceStatus{ID: model.SrcK8sAccess, State: "missing", Detail: "cannot list pods"})
+	r := Run(s, db(t), demoCfg(t), true)
+	k := find(t, r, "Kubernetes")
+	if k.State != Fail || !k.Required || !r.Failed() || !strings.Contains(k.Fix, "apply deploy/clusterrole.yaml (docs/usage.md#permissions)") {
+		t.Errorf("k8s = %+v failed=%v", k, r.Failed())
 	}
 }
