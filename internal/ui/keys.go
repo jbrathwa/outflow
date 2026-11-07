@@ -14,6 +14,9 @@ type keyMap struct {
 	Filter, Status   key.Binding
 	Exception, Rerun key.Binding
 	Help, Quit       key.Binding
+	ForceQuit        key.Binding // ctrl+c, honoured even while the filter input is open
+	FilterAccept     key.Binding
+	FilterCancel     key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -35,6 +38,10 @@ func newKeyMap() keyMap {
 		Rerun:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rerun")),
 		Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		ForceQuit:  key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
+
+		FilterAccept: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "keep filter")),
+		FilterCancel: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear filter")),
 	}
 }
 

@@ -78,7 +78,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" {
+	if key.Matches(msg, m.keys.ForceQuit) {
 		return m, tea.Quit
 	}
 	if m.filtering {
@@ -143,23 +143,21 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // onFilterKey handles keys while the filter input is open.
 func (m Model) onFilterKey(msg tea.KeyMsg) Model {
-	switch msg.Type {
-	case tea.KeyEnter:
+	id := m.selectedID() // before the filter changes, while the cursor still indexes the filtered rows
+	switch {
+	case key.Matches(msg, m.keys.FilterAccept):
 		m.filtering = false
 		m.input.Blur()
 		m.layout()
 		return m
-	case tea.KeyEsc:
+	case key.Matches(msg, m.keys.FilterCancel):
 		m.filtering = false
 		m.input.Blur()
 		m.input.SetValue("")
 	default:
-		id := m.selectedID()
 		m.input, _ = m.input.Update(msg)
-		m.reselect(id)
-		return m
 	}
-	m.reselect(m.selectedID())
+	m.reselect(id)
 	return m
 }
 
@@ -183,6 +181,9 @@ func (m *Model) rerunReport() {
 	}
 	id := m.selectedID()
 	m.report = m.rerun()
+	if !m.report.RuleConfigured {
+		m.statusFilter = ""
+	}
 	m.reselect(id)
 }
 
@@ -244,7 +245,7 @@ func (m *Model) reselect(id string) {
 		}
 	}
 	m.cursor = min(max(m.cursor, 0), max(len(rows)-1, 0))
-	m.destCursor = 0
+	m.detailFocus, m.destCursor = false, 0
 	m.clampDest()
 	m.layout()
 	m.detail.GotoTop()

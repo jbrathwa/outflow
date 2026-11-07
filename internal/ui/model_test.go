@@ -568,3 +568,41 @@ func TestSortedDestsTieBreak(t *testing.T) {
 		t.Errorf("neutral order = %s", got)
 	}
 }
+
+func TestFilterEscKeepsSelection(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, nil), 140, 40)
+	m = keys(m, "/ledger") // filtered cursor 0 is the same row index as unfiltered 0, so pick another
+	m = press(m, tea.KeyEsc)
+	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyDown) // select index 2 unfiltered
+	want := m.selectedID()
+	m = keys(m, "/")
+	m = keys(m, strings.ToLower(want[:3]))
+	if m.selectedID() != want {
+		t.Fatalf("anchor lost while typing: %s", m.selectedID())
+	}
+	m = press(m, tea.KeyEsc)
+	if got := m.selectedID(); got != want {
+		t.Errorf("esc moved selection from %s to %s", want, got)
+	}
+}
+
+func TestRerunDropsStatusFilterWhenNeutral(t *testing.T) {
+	rep := demoReport(t, true)
+	neutral := demoReport(t, false)
+	m := keys(sized(New(rep, func() analyze.Report { return neutral }), 140, 40), "f")
+	m = keys(m, "r")
+	if m.statusFilter != "" || strings.Contains(m.View(), "status:") {
+		t.Errorf("status filter should reset:\n%s", m.View())
+	}
+}
+
+func TestReselectGoneDropsDetailFocus(t *testing.T) {
+	rep := demoReport(t, true)
+	m := press(sized(New(rep, func() analyze.Report { r := rep; r.Workloads = rep.Workloads[1:]; return r }), 140, 40), tea.KeyEnter)
+	m = keys(m, "r")
+	if m.detailFocus {
+		t.Errorf("detail focus should drop when the workload is gone")
+	}
+}
