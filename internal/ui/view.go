@@ -36,7 +36,7 @@ func (m Model) geom() geometry {
 	}
 	g.sepH = 1
 	g.tableW, g.detailW = m.width, m.width
-	g.tableH = min(max(g.bodyH*2/5, 4), 1+len(m.report.Workloads), max(g.bodyH-2, 1))
+	g.tableH = min(max(g.bodyH*2/5, 4), 1+max(len(m.visible()), 1), max(g.bodyH-2, 1))
 	g.detailH = max(g.bodyH-g.tableH-g.sepH, 1)
 	return g
 }
@@ -47,6 +47,8 @@ func (m Model) tableRows() int { return max(m.geom().tableH-1, 1) }
 func (m *Model) layout() {
 	g := m.geom()
 	m.detail.Width, m.detail.Height = g.detailW, g.detailH
+	m.help.Width = max(m.width-1, 0)
+	m.input.Width = max(m.width-4, 1)
 	rows := g.tableH - 1
 	if m.cursor < m.offset {
 		m.offset = m.cursor
@@ -56,7 +58,15 @@ func (m *Model) layout() {
 	}
 	m.offset = max(m.offset, 0)
 	if w, ok := m.selected(); ok {
-		m.detail.SetContent(m.detailContent(w, g.detailW))
+		content, line := m.detailContent(w, g.detailW)
+		m.detail.SetContent(content)
+		if m.detailFocus { // keep the destination cursor in view
+			if line < m.detail.YOffset {
+				m.detail.SetYOffset(line)
+			} else if line >= m.detail.YOffset+g.detailH {
+				m.detail.SetYOffset(line - g.detailH + 1)
+			}
+		}
 	} else {
 		m.detail.SetContent("")
 	}
@@ -79,15 +89,50 @@ func (m Model) View() string {
 	var body string
 	table := block(m.tableView(g), g.tableW, g.tableH)
 	detail := block(m.detail.View(), g.detailW, g.detailH)
-	if g.side {
+	switch {
+	case m.overlay:
+		body = block(lipgloss.Place(m.width, g.bodyH, lipgloss.Center, lipgloss.Center, m.overlayBox()), m.width, g.bodyH)
+	case m.help.ShowAll:
+		body = block(indent(m.help.FullHelpView(m.keys.FullHelp())), m.width, g.bodyH)
+	case g.side:
 		sep := m.styles.Divider.Render(strings.TrimSuffix(strings.Repeat(" │ \n", g.bodyH), "\n"))
 		body = lipgloss.JoinHorizontal(lipgloss.Top, table, sep, detail)
-	} else {
+	default:
 		div := m.styles.Divider.Render(strings.Repeat("─", m.width))
 		body = lipgloss.JoinVertical(lipgloss.Left, table, div, detail)
 	}
-	foot := " " + m.help.ShortHelpView(m.keys.shortHelp())
-	return clip(m.headerView()+"\n"+body+"\n"+foot, m.width)
+	return clip(m.headerView()+"\n"+body+"\n"+m.footerView(), m.width)
+}
+
+// footerView is the filter input, a close hint, or the short key help.
+func (m Model) footerView() string {
+	switch {
+	case m.filtering:
+		return " " + m.input.View()
+	case m.overlay:
+		return " " + m.styles.Muted.Render("esc/e close · copy the snippet into outflow.yaml by hand")
+	case m.help.ShowAll:
+		return " " + m.styles.Muted.Render("?/esc close help")
+	}
+	return " " + m.help.ShortHelpView(m.keys.ShortHelp())
+}
+
+func indent(s string) string {
+	return " " + strings.ReplaceAll(s, "\n", "\n ")
+}
+
+// overlayBox is the centered exception snippet; outflow only shows it, never writes it.
+func (m Model) overlayBox() string {
+	inner := max(min(m.width-4, 64)-2, 1) // border + padding take 4 of the box width
+	lines := []string{m.styles.Title.Render(fit("Add to outflow.yaml (copy by hand)", inner, false))}
+	snippet := m.exceptionSnippet()
+	if snippet == nil {
+		lines = append(lines, m.styles.Muted.Render(fit("No destination selected", inner, false)))
+	}
+	for _, l := range snippet {
+		lines = append(lines, fit(l, inner, false))
+	}
+	return m.styles.Overlay.Render(strings.Join(lines, "\n"))
 }
 
 // clip truncates every line to w cells as a last guard against wrapping.
@@ -135,6 +180,12 @@ func (m Model) headerView() string {
 		left += "rule: " + r.Rule
 	} else {
 		left += st.Muted.Render("no rule")
+	}
+	if f := m.input.Value(); f != "" {
+		left += "   " + st.Warn.Render("filter: "+f)
+	}
+	if m.statusFilter != "" {
+		left += "   " + st.Warn.Render("status: "+string(m.statusFilter))
 	}
 	var pills string
 	if r.RuleConfigured {
@@ -214,9 +265,13 @@ func (m Model) tableView(g geometry) string {
 		heads = append(heads, fit(c.title, ws[i], c.right))
 	}
 	lines := []string{m.styles.ColHead.Render("  " + strings.Join(heads, " "))}
-	end := min(m.offset+g.tableH-1, len(m.report.Workloads))
+	rows := m.visible()
+	if len(rows) == 0 {
+		lines = append(lines, "  "+m.styles.Empty.Render("No workloads match"))
+	}
+	end := min(m.offset+g.tableH-1, len(rows))
 	for i := m.offset; i < end; i++ {
-		lines = append(lines, m.workloadRow(m.report.Workloads[i], cols, ws, i == m.cursor))
+		lines = append(lines, m.workloadRow(m.report.Workloads[rows[i]], cols, ws, i == m.cursor))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -300,7 +355,8 @@ func destGlyph(st styles, s analyze.Status) (string, lipgloss.Style) {
 	return "", st.Muted
 }
 
-func (m Model) detailContent(w analyze.WorkloadResult, width int) string {
+// detailContent renders the detail pane and the line index of the destination cursor.
+func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) {
 	st := m.styles
 	var out []string
 	title, sub := " "+w.ID, egressLine(w)
@@ -311,7 +367,7 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) string {
 	}
 	out = append(out, "")
 	if len(w.Destinations) == 0 {
-		return strings.Join(append(out, " "+st.Muted.Render("no destinations observed")), "\n")
+		return strings.Join(append(out, " "+st.Muted.Render("no destinations observed")), "\n"), 0
 	}
 
 	cols := []col{{"DESTINATION", 0, false}, {"LOCATION", 22, false}, {"HOW KNOWN", 12, false}, {"EVIDENCE", 9, false}, {"SEEN", 5, true}}
@@ -326,7 +382,9 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) string {
 	out = append(out, st.ColHead.Render(" "+strings.Join(heads, " ")))
 
 	var notes []string
-	for _, d := range w.Destinations {
+	cursorLine := 0
+	for di, d := range w.Destinations {
+		focused := m.detailFocus && di == m.destCursor
 		name := d.Domain
 		if name == "" {
 			name = d.IP
@@ -351,8 +409,16 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) string {
 		for i, v := range vals {
 			cells = append(cells, fit(v, ws[i], cols[i].right))
 		}
+		if focused {
+			cursorLine = len(out)
+			out = append(out, st.Marker.Render("▌")+st.Selected.Render(ansi.Strip(strings.Join(cells, " "))))
+			notes = append(notes, destNotes(d)...)
+			continue
+		}
 		out = append(out, " "+strings.Join(cells, " "))
-		notes = append(notes, destNotes(d)...)
+		if !m.detailFocus {
+			notes = append(notes, destNotes(d)...)
+		}
 	}
 	if len(notes) > 0 {
 		out = append(out, "")
@@ -360,7 +426,7 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) string {
 			out = append(out, " "+st.Note.Render(fit(n, width-1, false)))
 		}
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(out, "\n"), cursorLine
 }
 
 // destNotes lists the per-destination remarks shown under the table.

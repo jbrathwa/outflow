@@ -212,3 +212,323 @@ func TestNoLineExceedsWidth(t *testing.T) {
 		}
 	}
 }
+
+func keys(m Model, s string) Model {
+	for _, r := range s {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(Model)
+	}
+	return m
+}
+
+func shown(pane, id string) bool { return strings.Contains(pane, fit(id, 14, false)[:13]) }
+
+func tableSide(v string) string { // left-hand pane
+	var b strings.Builder
+	for _, l := range strings.Split(v, "\n") {
+		if l2, _, ok := strings.Cut(l, "│"); ok {
+			b.WriteString(l2 + "\n")
+		}
+	}
+	return b.String()
+}
+
+func TestFilterSlash(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, nil), 140, 40)
+	m = keys(m, "/")
+	m = keys(m, "LEDGER") // case-insensitive, and q-free letters go to the input
+	v := m.View()
+	if !strings.Contains(v, "filter: LEDGER") {
+		t.Errorf("header should show filter:\n%s", v)
+	}
+	tbl := tableSide(v)
+	if !strings.Contains(tbl, "payments/ledger-worker") {
+		t.Errorf("match missing:\n%s", tbl)
+	}
+	for _, w := range rep.Workloads {
+		if !strings.Contains(strings.ToLower(w.ID), "ledger") && strings.Contains(tbl, w.ID) {
+			t.Errorf("%s should be filtered out", w.ID)
+		}
+	}
+	m = press(m, tea.KeyEnter) // keeps the filter, closes the input
+	if v := m.View(); !strings.Contains(v, "filter: LEDGER") {
+		t.Errorf("enter should keep the filter:\n%s", v)
+	}
+	m = press(keys(m, "/"), tea.KeyEsc) // esc clears
+	if v := m.View(); strings.Contains(v, "filter:") {
+		t.Errorf("esc should clear the filter:\n%s", v)
+	}
+}
+
+func TestFilterQDoesNotQuitButCtrlCDoes(t *testing.T) {
+	m := keys(sized(New(demoReport(t, true), nil), 140, 40), "/q")
+	if !strings.Contains(m.View(), "filter: q") {
+		t.Errorf("q should reach the input:\n%s", m.View())
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil || cmd() != tea.Quit() {
+		t.Errorf("ctrl+c must quit while filtering")
+	}
+}
+
+func TestFilterNoMatch(t *testing.T) {
+	m := keys(sized(New(demoReport(t, true), nil), 140, 40), "/zzzz-nothing")
+	v := m.View()
+	if !strings.Contains(v, "No workloads match") {
+		t.Errorf("want empty-result message:\n%s", v)
+	}
+	press(m, tea.KeyDown) // must not panic
+	keys(m, "e")
+	m = press(m, tea.KeyEnter)
+	m = keys(m, "e")
+	if !strings.Contains(m.View(), "No destination selected") {
+		t.Errorf("overlay with no rows:\n%s", m.View())
+	}
+}
+
+func TestStatusFilterCycle(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, nil), 140, 40)
+	for _, step := range []struct {
+		name string
+		want analyze.Status
+	}{{"outside", analyze.Outside}, {"unknown", analyze.Unknown}, {"inside", analyze.Inside}} {
+		m = keys(m, "f")
+		v := m.View()
+		if !strings.Contains(v, "status: "+step.name) {
+			t.Errorf("header missing status: %s:\n%s", step.name, v)
+		}
+		tbl := tableSide(v)
+		for _, w := range rep.Workloads {
+			if (w.Status == step.want) != shown(tbl, w.ID) {
+				t.Errorf("%s: row %s (status %s) shown=%v", step.name, w.ID, w.Status, shown(tbl, w.ID))
+			}
+		}
+	}
+	m = keys(m, "f")
+	v := m.View()
+	if strings.Contains(v, "status:") {
+		t.Errorf("cycle should return to all:\n%s", v)
+	}
+	for _, w := range rep.Workloads {
+		if !shown(tableSide(v), w.ID) {
+			t.Errorf("all should show %s", w.ID)
+		}
+	}
+}
+
+func TestStatusFilterNeutralNoop(t *testing.T) {
+	m := sized(New(demoReport(t, false), nil), 140, 40)
+	before := m.View()
+	if after := keys(m, "f").View(); after != before {
+		t.Errorf("f must do nothing in neutral mode:\n%s", after)
+	}
+}
+
+func TestDestinationFocus(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, nil), 140, 40)
+	if strings.Contains(m.View(), "▌ stledgerweu") {
+		t.Fatalf("no destination cursor while the table is focused")
+	}
+	m = press(m, tea.KeyEnter)
+	cursorLine := func(m Model) string {
+		for _, l := range strings.Split(m.View(), "\n") {
+			if _, r, ok := strings.Cut(l, "│"); ok && strings.Contains(r, "▌") {
+				return r
+			}
+		}
+		return ""
+	}
+	first := cursorLine(m)
+	if first == "" {
+		t.Fatalf("enter should show a destination cursor:\n%s", m.View())
+	}
+	m = press(m, tea.KeyDown)
+	second := cursorLine(m)
+	if second == "" || second == first {
+		t.Errorf("down should move the destination cursor: %q -> %q", first, second)
+	}
+	if !strings.Contains(m.View(), rep.Workloads[0].ID) || strings.Contains(tableSide(m.View()), "▌") == false {
+		t.Errorf("table selection must stay on the workload")
+	}
+	m = press(m, tea.KeyEsc)
+	if cursorLine(m) != "" && strings.Contains(cursorLine(m), "stledgerweu") {
+		t.Errorf("esc should drop the destination cursor")
+	}
+}
+
+func TestDetailNotesFollowFocus(t *testing.T) {
+	rep := demoReport(t, true)
+	// find a workload with at least two destinations that have notes
+	for i, w := range rep.Workloads {
+		n := 0
+		for _, d := range w.Destinations {
+			if len(destNotes(d)) > 0 {
+				n++
+			}
+		}
+		if n < 2 {
+			continue
+		}
+		m := sized(New(rep, nil), 140, 80)
+		for range i {
+			m = press(m, tea.KeyDown)
+		}
+		all := m.View()
+		m = press(m, tea.KeyEnter)
+		focused := m.View()
+		d0 := w.Destinations[0]
+		for _, d := range w.Destinations {
+			for _, note := range destNotes(d) {
+				if !strings.Contains(all, note) {
+					t.Errorf("table focus should list %q", note)
+				}
+				if (d.Domain == d0.Domain && d.IP == d0.IP) != strings.Contains(focused, note) {
+					t.Errorf("detail focus: note %q presence wrong", note)
+				}
+			}
+		}
+		return
+	}
+	t.Skip("no workload with two annotated destinations")
+}
+
+func TestExceptionSnippet(t *testing.T) {
+	rep := demoReport(t, true)
+	m := sized(New(rep, nil), 140, 40)
+	m = keys(m, "e")
+	v := m.View()
+	if !strings.Contains(v, "- domain: "+rep.Workloads[0].Destinations[0].Domain) {
+		t.Errorf("table focus should use the first destination:\n%s", v)
+	}
+	m = press(press(press(sized(New(rep, nil), 140, 40), tea.KeyEnter), tea.KeyDown), tea.KeyDown)
+	m = keys(m, "e")
+	v = m.View()
+	for _, want := range []string{"Add to outflow.yaml (copy by hand)", "residency:", "exceptions:", "- domain: stledgerweu.blob.core.windows.net", "workload: payments/ledger-worker", `reason: ""`} {
+		if !strings.Contains(v, want) {
+			t.Errorf("overlay missing %q:\n%s", want, v)
+		}
+	}
+	if v := keys(m, "e").View(); strings.Contains(v, "Add to outflow.yaml") {
+		t.Errorf("e should close the overlay")
+	}
+	if v := press(m, tea.KeyEsc).View(); strings.Contains(v, "Add to outflow.yaml") {
+		t.Errorf("esc should close the overlay")
+	}
+	// detail focus uses the selected destination
+	m = press(press(sized(New(rep, nil), 140, 40), tea.KeyEnter), tea.KeyDown)
+	want := rep.Workloads[0].Destinations[1]
+	v = keys(m, "e").View()
+	field := "domain: " + want.Domain
+	if want.Domain == "" {
+		field = "cidr: " + want.IP + "/32"
+	}
+	if !strings.Contains(v, field) {
+		t.Errorf("overlay should use destination 1 (%s):\n%s", field, v)
+	}
+}
+
+func TestExceptionSnippetCIDRAndScope(t *testing.T) {
+	rep := analyze.Report{RuleConfigured: true, Workloads: []analyze.WorkloadResult{
+		{ID: "(node) aks-1", NodeLevel: true, Destinations: []analyze.Destination{{Observation: analyze.Observation{IP: "203.0.113.9"}}}},
+	}}
+	v := keys(sized(New(rep, nil), 100, 30), "e").View()
+	if !strings.Contains(v, "- cidr: 203.0.113.9/32") || strings.Contains(v, "workload:") {
+		t.Errorf("node-level cidr snippet wrong:\n%s", v)
+	}
+}
+
+func TestExceptionNoDestination(t *testing.T) {
+	rep := analyze.Report{Workloads: []analyze.WorkloadResult{{ID: "a/b"}}}
+	v := keys(sized(New(rep, nil), 100, 30), "e").View()
+	if !strings.Contains(v, "No destination selected") {
+		t.Errorf("overlay:\n%s", v)
+	}
+}
+
+func TestRerunCallsFunc(t *testing.T) {
+	rep := demoReport(t, true)
+	calls := 0
+	newRep := rep
+	newRep.Workloads = rep.Workloads[1:] // first workload vanished
+	rerun := func() analyze.Report { calls++; return newRep }
+	m := sized(New(rep, rerun), 140, 40)
+	m = press(press(m, tea.KeyDown), tea.KeyDown) // select index 2
+	id := rep.Workloads[2].ID
+	m = keys(m, "r")
+	if calls != 1 {
+		t.Fatalf("rerun calls = %d", calls)
+	}
+	if m.cursor < 0 || m.cursor >= len(newRep.Workloads) || newRep.Workloads[m.cursor].ID != id {
+		t.Errorf("selection should follow %s, cursor=%d", id, m.cursor)
+	}
+	// shrink to one row: cursor clamps
+	one := rep
+	one.Workloads = rep.Workloads[:1]
+	m2 := keys(sized(New(rep, func() analyze.Report { return one }), 140, 40), "G")
+	m2 = keys(m2, "r")
+	if m2.cursor != 0 {
+		t.Errorf("cursor should clamp, got %d", m2.cursor)
+	}
+	keys(sized(New(rep, nil), 140, 40), "r") // nil rerun is a no-op
+}
+
+func TestHelpToggle(t *testing.T) {
+	m := sized(New(demoReport(t, true), nil), 140, 40)
+	short := m.View()
+	for _, want := range []string{"↑/↓ move", "enter detail", "/ filter", "f status", "e exception", "r rerun", "? help", "q quit"} {
+		if !strings.Contains(short, want) {
+			t.Errorf("short help missing %q:\n%s", want, short)
+		}
+	}
+	m = keys(m, "?")
+	full := m.View()
+	if !strings.Contains(full, "scroll detail down") {
+		t.Errorf("full help should list every binding:\n%s", full)
+	}
+	if v := keys(m, "?").View(); strings.Contains(v, "scroll detail down") {
+		t.Errorf("? should toggle back")
+	}
+}
+
+func TestQuit(t *testing.T) {
+	m := sized(New(demoReport(t, true), nil), 140, 40)
+	for _, msg := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'q'}}, {Type: tea.KeyCtrlC}} {
+		_, cmd := m.Update(msg)
+		if cmd == nil || cmd() != tea.Quit() {
+			t.Errorf("%v should return tea.Quit", msg)
+		}
+	}
+}
+
+func TestNoLineExceedsWidthInteractive(t *testing.T) {
+	for _, ruled := range []bool{true, false} {
+		rep := demoReport(t, ruled)
+		for _, size := range [][2]int{{140, 40}, {80, 24}, {60, 24}, {40, 10}} {
+			base := sized(New(rep, nil).WithCoverage(doctor.Partial), size[0], size[1])
+			states := map[string]Model{
+				"overlay":       keys(base, "e"),
+				"overlay-focus": keys(press(base, tea.KeyEnter), "e"),
+				"filter-open":   keys(base, "/payments-and-a-very-long-filter-text-that-overflows"),
+				"filter-closed": press(keys(base, "/led"), tea.KeyEnter),
+				"no-match":      keys(base, "/zzz"),
+				"status":        keys(base, "f"),
+				"help":          keys(base, "?"),
+				"focus":         press(base, tea.KeyEnter),
+			}
+			for name, m := range states {
+				lines := strings.Split(m.View(), "\n")
+				if len(lines) > size[1] {
+					t.Errorf("%s ruled=%v %dx%d: %d lines", name, ruled, size[0], size[1], len(lines))
+				}
+				for _, l := range lines {
+					if lipgloss.Width(l) > size[0] {
+						t.Errorf("%s ruled=%v %dx%d: line too wide (%d): %q", name, ruled, size[0], size[1], lipgloss.Width(l), l)
+					}
+				}
+			}
+		}
+	}
+}

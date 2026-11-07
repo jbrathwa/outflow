@@ -21,6 +21,7 @@ type styles struct {
 	Warn, Note, Selected lipgloss.Style
 	Empty                lipgloss.Style
 	Row, Marker          lipgloss.Style
+	Overlay, Prompt      lipgloss.Style
 }
 
 func newStyles() styles {
@@ -44,6 +45,8 @@ func newStyles() styles {
 		Empty:       lipgloss.NewStyle().Foreground(colMuted),
 		Row:         lipgloss.NewStyle(),
 		Marker:      lipgloss.NewStyle().Bold(true).Background(colSelBg),
+		Overlay:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colAmber).Padding(0, 1),
+		Prompt:      lipgloss.NewStyle().Foreground(colAmber).Bold(true),
 	}
 }
 
