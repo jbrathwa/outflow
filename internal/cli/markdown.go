@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/analyze"
 	"github.com/jbrathwa/outflow/internal/doctor"
+	"github.com/jbrathwa/outflow/internal/location"
 )
 
 // WriteMarkdown writes the report as Markdown: header lines, then a table of

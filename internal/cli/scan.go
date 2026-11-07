@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jbrathwa/outflow/internal/location"
-	"github.com/jbrathwa/outflow/internal/model"
 	"github.com/jbrathwa/outflow/internal/analyze"
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
+	"github.com/jbrathwa/outflow/internal/location"
+	"github.com/jbrathwa/outflow/internal/model"
 )
 
 // coverageJSON is the report's coverage section.

@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
 	"github.com/jbrathwa/outflow/internal/netpol"
-	"github.com/jbrathwa/outflow/internal/config"
 )
 
 // ReportSchemaVersion is the report JSON schema version written by this build.

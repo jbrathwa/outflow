@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/jbrathwa/outflow/internal/netpol"
 	"github.com/jbrathwa/outflow/internal/analyze"
+	"github.com/jbrathwa/outflow/internal/netpol"
 )
 
 // fit truncates s with an ellipsis to w cells and pads it with spaces to exactly w.

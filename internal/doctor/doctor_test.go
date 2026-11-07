@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jbrathwa/outflow/internal/location"
-	"github.com/jbrathwa/outflow/internal/model"
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/fixtures"
+	"github.com/jbrathwa/outflow/internal/location"
+	"github.com/jbrathwa/outflow/internal/model"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")

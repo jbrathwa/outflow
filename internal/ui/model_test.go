@@ -8,11 +8,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/analyze"
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/fixtures"
+	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/muesli/termenv"
 )
 

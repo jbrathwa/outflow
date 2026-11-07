@@ -6,8 +6,8 @@ import (
 	_ "embed"
 	"encoding/json"
 
-	"github.com/jbrathwa/outflow/internal/model"
 	"github.com/jbrathwa/outflow/internal/config"
+	"github.com/jbrathwa/outflow/internal/model"
 )
 
 //go:embed demo.json

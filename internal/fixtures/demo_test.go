@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbrathwa/outflow/internal/analyze"
+	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
 	"github.com/jbrathwa/outflow/internal/netpol"
-	"github.com/jbrathwa/outflow/internal/analyze"
-	"github.com/jbrathwa/outflow/internal/config"
 )
 
 func demoReport(t *testing.T, cfg config.Config) analyze.Report {

@@ -2,11 +2,11 @@ package ui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jbrathwa/outflow/internal/location"
-	"github.com/jbrathwa/outflow/internal/model"
 	"github.com/jbrathwa/outflow/internal/analyze"
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
+	"github.com/jbrathwa/outflow/internal/location"
+	"github.com/jbrathwa/outflow/internal/model"
 )
 
 // Run shows the interactive view until the user quits. Matches cli.TUIFunc.

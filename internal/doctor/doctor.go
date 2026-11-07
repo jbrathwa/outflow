@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
-	"github.com/jbrathwa/outflow/internal/config"
 )
 
 // State is the outcome of one check.
