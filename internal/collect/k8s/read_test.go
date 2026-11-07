@@ -69,7 +69,7 @@ func TestReadDeploymentChain(t *testing.T) {
 	if st.Cluster.Name != "ctx1" || st.Cluster.Context != "ctx1" {
 		t.Fatalf("cluster: %+v", st.Cluster)
 	}
-	if len(st.Sources) != 1 || st.Sources[0].ID != model.SrcK8sAPI || st.Sources[0].State != "ok" ||
+	if len(st.Sources) != 2 || st.Sources[0].ID != model.SrcK8sAPI || st.Sources[0].State != "ok" ||
 		st.Sources[0].Detail != "read 1 workloads, 1 pods, 0 nodes" {
 		t.Fatalf("sources: %+v", st.Sources)
 	}

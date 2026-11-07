@@ -65,11 +65,13 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 
 	// Nodes.
 	podCIDRs := map[string]bool{}
+	var rawNodes []corev1.Node
 	err := listAll(func(o metav1.ListOptions) (string, error) {
 		l, err := s.cs.CoreV1().Nodes().List(ctx, o)
 		if err != nil {
 			return "", err
 		}
+		rawNodes = append(rawNodes, l.Items...)
 		for _, n := range l.Items {
 			node := model.Node{Name: n.Name, IPs: []string{}}
 			for _, a := range n.Status.Addresses {
@@ -285,7 +287,18 @@ func (s *Source) Read(ctx context.Context) (collect.ClusterState, error) {
 		src.State = "warn"
 		src.Detail += "; name collision: " + strings.Join(collisions, ", ")
 	}
+	det, detSrc := detect(ctx, s.cs, s.dyn, rawNodes)
+	st.Cluster.Platform, st.Cluster.Region, st.Cluster.CNI = det.Platform, det.Region, det.CNI
+	st.Cluster.PolicyEngine, st.Cluster.NodeLocalDNS, st.Cluster.CalicoCRDPolicies = det.PolicyEngine, det.NodeLocalDNS, det.CalicoCRDPolicies
 	st.Sources = []model.SourceStatus{src}
+	for _, d := range detSrc {
+		if d.ID == model.SrcK8sAPI {
+			st.Sources[0].State = "warn"
+			st.Sources[0].Detail += "; " + d.Detail
+			continue
+		}
+		st.Sources = append(st.Sources, d)
+	}
 	return st, nil
 }
 
