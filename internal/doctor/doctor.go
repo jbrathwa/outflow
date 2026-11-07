@@ -223,9 +223,13 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 		res = Check{Name: "Rule", State: OK, Detail: "outflow.yaml · " + ruleSummary(cfg.Residency)}
 	}
 
-	profile := "generic"
-	if c.Platform == "AKS" {
-		profile = "azure"
+	// The profile collection used; older snapshots lack it, so derive it from the platform.
+	profile := s.Profile
+	if profile == "" {
+		profile = "generic"
+		if c.Platform == "AKS" {
+			profile = "azure"
+		}
 	}
 
 	clusterChecks := []Check{api, platform, cni, policy}

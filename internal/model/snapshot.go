@@ -23,6 +23,8 @@ type Snapshot struct {
 	EgressEvents    []EgressEvent   `json:"egressEvents"`
 	Resolutions     []Resolution    `json:"resolutions"`
 	Sources         []SourceStatus  `json:"sources"`
+	// Profile is the collection profile used ("azure", "generic"); empty in older snapshots.
+	Profile string `json:"profile,omitempty"`
 }
 
 // Cluster describes the cluster and its network setup.

@@ -204,6 +204,7 @@ func (c Collector) run(ctx context.Context, opt Options, probe bool) (model.Snap
 		EgressEvents:    events,
 		Resolutions:     resolutions,
 		Sources:         statuses,
+		Profile:         plat.Name,
 	}, nil
 }
 

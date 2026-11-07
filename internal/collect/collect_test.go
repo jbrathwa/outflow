@@ -277,3 +277,17 @@ func TestMergeReusedIPByTime(t *testing.T) {
 		t.Fatalf("%v", subjects)
 	}
 }
+
+func TestSnapshotRecordsProfile(t *testing.T) {
+	c := Collector{
+		Cluster:  fakeCluster{st: baseState()},
+		Platform: func(model.Cluster, []string) (Platform, error) { return Platform{Name: "azure"}, nil },
+		Now:      func() time.Time { return t0 },
+	}
+	for _, run := range []func(context.Context, Options) (model.Snapshot, error){c.Collect, c.Probe} {
+		snap, err := run(context.Background(), Options{})
+		if err != nil || snap.Profile != "azure" {
+			t.Fatalf("profile %q err %v", snap.Profile, err)
+		}
+	}
+}

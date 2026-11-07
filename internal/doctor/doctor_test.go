@@ -418,3 +418,11 @@ func TestDoctorFirewallNoAccessFix(t *testing.T) {
 		t.Errorf("fix %q", fw.Fix)
 	}
 }
+
+func TestDoctorProfileFromSnapshot(t *testing.T) {
+	s, _ := fixtures.Demo()
+	s.Profile = "generic" // e.g. --profile generic on an AKS cluster
+	if r := Run(s, db(t), demoCfg(t), true); r.Profile != "generic" {
+		t.Errorf("profile = %q", r.Profile)
+	}
+}
