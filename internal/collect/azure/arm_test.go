@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jbrathwa/outflow/internal/collect"
@@ -228,4 +229,76 @@ func forbidden(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+const (
+	listPath = "/subscriptions/" + subID + "/providers/Microsoft.ContainerService/managedClusters"
+	nodeRG   = "MC_rg-aks-prod_aks-prod-eus_eastus"
+)
+
+func enrichRG(t *testing.T, e *Enricher, provs []string, rg string) (collect.ClusterState, model.SourceStatus) {
+	t.Helper()
+	st := collect.ClusterState{ProviderIDs: provs, NodeResourceGroup: rg}
+	ss := e.Enrich(context.Background(), &st)
+	if len(ss) != 1 || ss[0].ID != model.SrcAKS {
+		t.Fatalf("statuses = %+v", ss)
+	}
+	return st, ss[0]
+}
+
+func TestEnrichDirectGetFromNodeResourceGroup(t *testing.T) {
+	srv := lafake.New(t, nil)
+	srv.ARMStatus(listPath, 403)
+	srv.ARM(aksID, clusterBody(map[string]any{"nodeResourceGroup": nodeRG}))
+	st, s := enrichRG(t, newEnricher(srv, "", &Target{}), []string{nodeProv}, "mc_rg-aks-prod_aks-prod-eus_eastus")
+	if s.State != "ok" || st.Cluster.Name != "aks-prod-eus" {
+		t.Fatalf("%+v", s)
+	}
+	if n := srv.ARMCalls(listPath); n != 0 {
+		t.Fatalf("list called %d times", n)
+	}
+	if n := srv.ARMCalls(aksID); n != 1 {
+		t.Fatalf("cluster GET %d times, want 1", n)
+	}
+}
+
+func TestEnrichDirectGetFallsBackToList(t *testing.T) {
+	for _, tc := range []struct{ name, rg string }{
+		{"ambiguous", "MC_rg_aks_prod_eus_eastus"},
+		{"no prefix", "rg-aks-prod_aks-prod-eus_eastus_x"},
+		{"empty", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := lafake.New(t, nil)
+			srv.ARM(listPath, map[string]any{"value": []any{
+				map[string]any{"id": aksID, "properties": map[string]any{"nodeResourceGroup": nodeRG}}}})
+			srv.ARM(aksID, clusterBody(map[string]any{"nodeResourceGroup": nodeRG}))
+			_, s := enrichRG(t, newEnricher(srv, "", &Target{}), []string{nodeProv}, tc.rg)
+			if s.State != "ok" || srv.ARMCalls(listPath) != 1 {
+				t.Fatalf("%+v list=%d", s, srv.ARMCalls(listPath))
+			}
+		})
+	}
+	// The direct GET answers but for a different node resource group: use the list.
+	srv := lafake.New(t, nil)
+	srv.ARM(listPath, map[string]any{"value": []any{}})
+	srv.ARM(aksID, clusterBody(map[string]any{"nodeResourceGroup": "MC_other"}))
+	_, s := enrichRG(t, newEnricher(srv, "", &Target{}), []string{nodeProv}, nodeRG)
+	if s.State != "warn" || srv.ARMCalls(listPath) != 1 {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestEnrichListForbiddenIsNotAnARMDenial(t *testing.T) {
+	srv := lafake.New(t, nil)
+	srv.ARMStatus(listPath, 403)
+	p := NewPlatform(Config{Tokens: StaticToken("t"), LAEndpoint: srv.URL, ARMEndpoint: srv.URL})
+	st := collect.ClusterState{ProviderIDs: []string{nodeProv}}
+	ss := p.Enricher.Enrich(context.Background(), &st)
+	if len(ss) != 1 || ss[0].State != "warn" || ss[0].Detail != "cannot list AKS clusters in the subscription; set sources.aks_cluster" {
+		t.Fatalf("%+v", ss)
+	}
+	if got := p.Final(); got[0].State == "missing" || strings.Contains(got[0].Detail, "AKS resource") {
+		t.Fatalf("azure-access %+v", got)
+	}
 }

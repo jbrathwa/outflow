@@ -300,3 +300,28 @@ func TestReadNameCollisionWarns(t *testing.T) {
 		t.Fatalf("source: %+v", s)
 	}
 }
+
+func TestReadNodeResourceGroupLabel(t *testing.T) {
+	node := func(name string, labels map[string]string) *corev1.Node {
+		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}}
+	}
+	cs := fake.NewSimpleClientset(
+		node("n2", map[string]string{"kubernetes.azure.com/cluster": "MC_rg_aks-b_eastus"}),
+		node("n0", nil),
+		node("n1", map[string]string{"kubernetes.azure.com/cluster": "MC_rg_aks-prod-eus_eastus"}),
+	)
+	st, err := NewFromClients(cs, nil, "c").Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NodeResourceGroup != "MC_rg_aks-prod-eus_eastus" {
+		t.Fatalf("node resource group %q", st.NodeResourceGroup)
+	}
+	st, err = NewFromClients(cs, nil, "c").Probe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NodeResourceGroup != "MC_rg_aks-prod-eus_eastus" {
+		t.Fatalf("probe node resource group %q", st.NodeResourceGroup)
+	}
+}

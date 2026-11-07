@@ -37,6 +37,16 @@ type ARM struct {
 
 // get performs GET <endpoint><path>?api-version=<v> and returns the status and body.
 func (a *ARM) get(ctx context.Context, path, apiVersion string) (int, []byte, error) {
+	return a.do(ctx, path, apiVersion, true)
+}
+
+// getUnrecorded is get without OnResult, for calls whose outcome says nothing about
+// access to the AKS resource itself (the subscription-wide cluster list).
+func (a *ARM) getUnrecorded(ctx context.Context, path, apiVersion string) (int, []byte, error) {
+	return a.do(ctx, path, apiVersion, false)
+}
+
+func (a *ARM) do(ctx context.Context, path, apiVersion string, record bool) (int, []byte, error) {
 	tok, err := a.Tokens.Token(ctx, ScopeARM)
 	if err != nil {
 		return 0, nil, errors.New("arm token unavailable")
@@ -54,7 +64,7 @@ func (a *ARM) get(ctx context.Context, path, apiVersion string) (int, []byte, er
 		hc = http.DefaultClient
 	}
 	resp, err := hc.Do(req)
-	if a.OnResult != nil {
+	if record && a.OnResult != nil {
 		s := 0
 		if err == nil {
 			s = resp.StatusCode
@@ -210,34 +220,42 @@ const (
 	detailForbidden = "no access to the AKS resource (needs Reader)"
 	detailNotFound  = "AKS resource not found; set sources.aks_cluster (needs Reader on the cluster)"
 	detailFailed    = "AKS resource read failed"
+	detailNoList    = "cannot list AKS clusters in the subscription; set sources.aks_cluster"
 )
 
 // Enrich implements collect.ClusterEnricher.
 func (e *Enricher) Enrich(ctx context.Context, st *collect.ClusterState) []model.SourceStatus {
 	id := strings.TrimSpace(e.AKSCluster)
-	explicit := id != ""
-	if !explicit {
+	var found *managedCluster
+	if id == "" {
 		var s []model.SourceStatus
-		id, s = e.discover(ctx, st.ProviderIDs)
+		id, found, s = e.discover(ctx, st.ProviderIDs, st.NodeResourceGroup)
 		if s != nil {
 			return s
 		}
 	}
-	code, raw, err := e.ARM.get(ctx, id, apiManagedClusters)
-	if err != nil {
-		return e.st("missing", detailFailed)
-	}
-	switch {
-	case code == 401 || code == 403:
-		return e.st("missing", detailForbidden)
-	case code == 404:
-		return e.st("missing", "AKS resource not found: "+resourceName(id))
-	case code/100 != 2:
-		return e.st("missing", detailFailed)
-	}
 	var mc managedCluster
-	if json.Unmarshal(raw, &mc) != nil {
-		return e.st("missing", detailFailed)
+	if found != nil {
+		mc = *found
+	} else {
+		code, raw, err := e.ARM.get(ctx, id, apiManagedClusters)
+		if err != nil {
+			return e.st("missing", detailFailed)
+		}
+		switch {
+		case code == 401 || code == 403:
+			return e.st("missing", detailForbidden)
+		case code == 404:
+			return e.st("missing", "AKS resource not found: "+resourceName(id))
+		case code/100 != 2:
+			return e.st("missing", detailFailed)
+		}
+		if json.Unmarshal(raw, &mc) != nil {
+			return e.st("missing", detailFailed)
+		}
+	}
+	if e.Target != nil {
+		e.Target.AKSResourceID = id
 	}
 	c := &st.Cluster
 	name := mc.Name
@@ -298,7 +316,10 @@ func cidrs(list []string, one string) []string {
 }
 
 // discover finds the managed cluster whose node resource group holds this cluster's nodes.
-func (e *Enricher) discover(ctx context.Context, providerIDs []string) (string, []model.SourceStatus) {
+// It first tries a direct GET of the cluster named by the node resource group label
+// (MC_<rg>_<name>_<region>), which needs only Reader on the cluster; otherwise, or when that
+// fails, it lists the subscription's clusters. found is set when the direct GET succeeded.
+func (e *Enricher) discover(ctx context.Context, providerIDs []string, nodeRG string) (id string, found *managedCluster, st []model.SourceStatus) {
 	var sub, rg string
 	for _, p := range providerIDs {
 		if m := providerRE.FindStringSubmatch(p); m != nil {
@@ -307,29 +328,56 @@ func (e *Enricher) discover(ctx context.Context, providerIDs []string) (string, 
 		}
 	}
 	if sub == "" {
-		return "", e.st("warn", detailNotFound)
+		return "", nil, e.st("warn", detailNotFound)
 	}
-	code, raw, err := e.ARM.get(ctx, "/subscriptions/"+sub+"/providers/Microsoft.ContainerService/managedClusters", apiManagedClusters)
+	if cid, ok := clusterFromNodeRG(sub, nodeRG); ok {
+		code, raw, err := e.ARM.get(ctx, cid, apiManagedClusters)
+		var mc managedCluster
+		if err == nil && code/100 == 2 && json.Unmarshal(raw, &mc) == nil &&
+			strings.EqualFold(mc.Properties.NodeResourceGroup, nodeRG) {
+			if mc.ID != "" {
+				cid = mc.ID
+			}
+			return cid, &mc, nil
+		}
+	}
+	code, raw, err := e.ARM.getUnrecorded(ctx, "/subscriptions/"+sub+"/providers/Microsoft.ContainerService/managedClusters", apiManagedClusters)
 	switch {
 	case err != nil:
-		return "", e.st("missing", detailFailed)
+		return "", nil, e.st("missing", detailFailed)
 	case code == 401 || code == 403:
-		return "", e.st("missing", detailForbidden)
+		return "", nil, e.st("warn", detailNoList)
 	case code/100 != 2:
-		return "", e.st("warn", detailNotFound)
+		return "", nil, e.st("warn", detailNotFound)
 	}
 	var list struct {
 		Value []managedCluster `json:"value"`
 	}
 	if json.Unmarshal(raw, &list) != nil {
-		return "", e.st("missing", detailFailed)
+		return "", nil, e.st("missing", detailFailed)
 	}
 	for _, m := range list.Value {
 		if strings.EqualFold(m.Properties.NodeResourceGroup, rg) && m.ID != "" {
-			return m.ID, nil
+			return m.ID, nil, nil
 		}
 	}
-	return "", e.st("warn", detailNotFound)
+	return "", nil, e.st("warn", detailNotFound)
+}
+
+// clusterFromNodeRG derives the managed cluster resource ID from a default node resource
+// group name MC_<rg>_<name>_<region>. It refuses anything that does not split into exactly
+// four non-empty underscore-separated parts, since then the split is ambiguous.
+func clusterFromNodeRG(sub, nodeRG string) (string, bool) {
+	parts := strings.Split(nodeRG, "_")
+	if len(parts) != 4 || !strings.EqualFold(parts[0], "MC") {
+		return "", false
+	}
+	for _, p := range parts[1:] {
+		if p == "" {
+			return "", false
+		}
+	}
+	return "/subscriptions/" + sub + "/resourceGroups/" + parts[1] + "/providers/Microsoft.ContainerService/managedClusters/" + parts[2], true
 }
 
 // localDNS reports whether any agent pool enables AKS LocalDNS, and whether the

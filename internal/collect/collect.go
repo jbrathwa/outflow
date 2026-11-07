@@ -27,7 +27,10 @@ type ClusterState struct {
 	Nodes           []model.Node
 	NetworkPolicies []model.NetworkPolicy
 	ProviderIDs     []string // node spec.providerID values, for platform discovery
-	Sources         []model.SourceStatus
+	// NodeResourceGroup is the kubernetes.azure.com/cluster node label (the AKS node
+	// resource group) of the first labelled node by name; empty when no node has it.
+	NodeResourceGroup string
+	Sources           []model.SourceStatus
 }
 
 // ClusterSource reads the live cluster.

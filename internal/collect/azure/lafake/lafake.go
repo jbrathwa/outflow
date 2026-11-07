@@ -41,12 +41,14 @@ type Server struct {
 	mu    sync.Mutex
 	calls []Call
 	arm   map[string]any
+	armSt map[string]int
+	armN  map[string]int
 }
 
 // New starts a fake server routed by the `// outflow:<name>` comment on the first query line.
 func New(t *testing.T, routes map[string]Handler) *Server {
 	t.Helper()
-	s := &Server{routes: routes, arm: map[string]any{}}
+	s := &Server{routes: routes, arm: map[string]any{}, armSt: map[string]int{}, armN: map[string]int{}}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	s.URL = s.srv.URL
 	t.Cleanup(s.srv.Close)
@@ -67,6 +69,20 @@ func (s *Server) ARM(path string, body any) {
 	s.mu.Unlock()
 }
 
+// ARMStatus makes GET path answer with an error body and the given status.
+func (s *Server) ARMStatus(path string, status int) {
+	s.mu.Lock()
+	s.armSt[path] = status
+	s.mu.Unlock()
+}
+
+// ARMCalls returns how many GET requests path received.
+func (s *Server) ARMCalls(path string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.armN[path]
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -82,7 +98,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || !strings.HasPrefix(r.URL.Path, pre) || !strings.HasSuffix(r.URL.Path, suf) {
 		s.mu.Lock()
 		body, ok := s.arm[r.URL.Path]
+		status, failing := s.armSt[r.URL.Path]
+		if r.Method == http.MethodGet {
+			s.armN[r.URL.Path]++
+		}
 		s.mu.Unlock()
+		if r.Method == http.MethodGet && failing {
+			writeJSON(w, status, errBody("AuthorizationFailed", "denied"))
+			return
+		}
 		if r.Method == http.MethodGet && ok {
 			writeJSON(w, 200, body)
 			return

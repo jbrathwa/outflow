@@ -324,11 +324,15 @@ func convertPolicy(p netv1.NetworkPolicy) model.NetworkPolicy {
 	return out
 }
 
-// applyNodes fills st.Nodes, st.ProviderIDs and st.Cluster.PodCIDRs (falling back to the legacy
-// single PodCIDR) from raw nodes, all sorted. Read and Probe share it.
+// applyNodes fills st.Nodes, st.ProviderIDs, st.NodeResourceGroup and st.Cluster.PodCIDRs
+// (falling back to the legacy single PodCIDR) from raw nodes, all sorted. Read and Probe share it.
 func applyNodes(st *collect.ClusterState, raw []corev1.Node) {
 	podCIDRs := map[string]bool{}
+	rgNode := ""
 	for _, n := range raw {
+		if rg := n.Labels["kubernetes.azure.com/cluster"]; rg != "" && (rgNode == "" || n.Name < rgNode) {
+			rgNode, st.NodeResourceGroup = n.Name, rg
+		}
 		node := model.Node{Name: n.Name, IPs: []string{}}
 		for _, a := range n.Status.Addresses {
 			if a.Type == corev1.NodeInternalIP {
