@@ -373,3 +373,22 @@ func TestBuildNodeLookupWithoutFirewallIsUnknown(t *testing.T) {
 		t.Errorf("node status %q, outside count %d; want unknown, 0", n.Status, r.Counts.Outside)
 	}
 }
+
+// Lookups in bins without a firewall match must not add a DNS-only row beside the
+// confirmed one for the same domain, nor inflate the counts.
+func TestBuildNoDNSOnlyBesideConfirmed(t *testing.T) {
+	r := Build(loadSnap(t, "dns-only-beside-confirmed.json"), seedDB(t), rule("warn", "US"))
+	w := row(t, r, "a/w")
+	var got []string
+	for _, d := range w.Destinations {
+		got = append(got, d.Domain+"="+string(d.Evidence))
+	}
+	want := "api.stripe.com=confirmed,stledgerweu.blob.core.windows.net=confirmed"
+	if strings.Join(got, ",") != want {
+		t.Errorf("destinations\n got %s\nwant %s", strings.Join(got, ","), want)
+	}
+	c := r.Counts
+	if c.Destinations != 2 || c.Outside != 1 || c.Unknown != 0 || c.Inside != 1 {
+		t.Errorf("counts = %+v, want 2 destinations: 1 outside, 1 inside", c)
+	}
+}

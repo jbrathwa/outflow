@@ -89,7 +89,22 @@ func Attribute(s model.Snapshot) []Observation {
 		// but is DNS only: nothing shows that traffic left.
 		obs = append(obs, o)
 	}
-	return merge(obs)
+	return dropShadowedDNSOnly(merge(obs))
+}
+
+// dropShadowedDNSOnly removes DNS-only observations whose subject and domain also
+// have firewall-joined traffic: the joined row already answers where that domain went.
+func dropShadowedDNSOnly(obs []Observation) []Observation {
+	type key struct{ subject, domain string }
+	joined := map[key]bool{}
+	for _, o := range obs {
+		if o.Evidence != DNSOnly && o.Domain != "" {
+			joined[key{o.Subject, o.Domain}] = true
+		}
+	}
+	return slices.DeleteFunc(obs, func(o Observation) bool {
+		return o.Evidence == DNSOnly && joined[key{o.Subject, o.Domain}]
+	})
 }
 
 // resolutionIndex maps each normalized domain to the IPs of its resolutions, in input order.

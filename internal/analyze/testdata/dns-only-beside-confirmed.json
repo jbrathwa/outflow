@@ -1,0 +1,13 @@
+{"schemaVersion":1,"cluster":{"name":"c","podCidrs":["10.244.0.0/16"]},
+"window":{"start":"2026-11-06T00:00:00Z","end":"2026-11-07T00:00:00Z"},
+"workloads":[{"namespace":"a","name":"w","kind":"Deployment","labels":{}}],
+"pods":[{"namespace":"a","name":"w-1","workloadId":"a/w","node":"n1","ip":"10.244.0.9","start":"2026-11-06T00:00:00Z"}],
+"nodes":[{"name":"n1","ips":["10.224.0.4"]}],
+"dnsLookups":[{"podIp":"10.244.0.9","domain":"api.stripe.com","bin":"2026-11-06T10:00:00Z","count":5},
+{"podIp":"10.244.0.9","domain":"api.stripe.com","bin":"2026-11-06T12:00:00Z","count":5},
+{"podIp":"10.244.0.9","domain":"stledgerweu.blob.core.windows.net","bin":"2026-11-06T10:00:00Z","count":5},
+{"podIp":"10.244.0.9","domain":"stledgerweu.blob.core.windows.net","bin":"2026-11-06T13:00:00Z","count":5}],
+"egressEvents":[{"nodeIp":"10.224.0.4","domain":"api.stripe.com","port":443,"action":"allow","bin":"2026-11-06T10:00:00Z","count":3},
+{"nodeIp":"10.224.0.4","domain":"stledgerweu.blob.core.windows.net","port":443,"action":"allow","bin":"2026-11-06T10:00:00Z","count":3}],
+"resolutions":[{"domain":"api.stripe.com","ips":["3.218.180.12"],"source":"outflow"},{"domain":"stledgerweu.blob.core.windows.net","ips":["20.60.40.4"],"source":"outflow"}],
+"sources":[{"id":"k8s-api","state":"ok"},{"id":"firewall-logs","state":"ok"},{"id":"coredns-logs","state":"ok"},{"id":"pod-inventory","state":"ok"},{"id":"cloud-ranges","state":"ok"},{"id":"geoip","state":"ok"}]}

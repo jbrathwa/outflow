@@ -337,3 +337,23 @@ func TestAttributeNodeLookupWithoutFirewallIsDNSOnly(t *testing.T) {
 		t.Errorf("matched node lookup = %+v, want node-level", obs[1])
 	}
 }
+
+func TestAttributeDropsDNSOnlyBesideJoined(t *testing.T) {
+	s := baseSnapshot()
+	s.DNSLookups = []model.DNSLookup{
+		{PodIP: "10.244.1.5", Domain: "api.stripe.com", Bin: at(0), Count: 1},
+		{PodIP: "10.244.1.5", Domain: "API.Stripe.com.", Bin: at(30), Count: 4}, // no firewall match
+		{PodIP: "10.244.1.6", Domain: "api.stripe.com", Bin: at(30), Count: 2},  // other subject: kept
+	}
+	s.EgressEvents = []model.EgressEvent{
+		{NodeIP: "10.224.0.4", Domain: "api.stripe.com", Protocol: "TCP", Port: 443, Action: "deny", Bin: at(0), Count: 3},
+	}
+	obs := Attribute(s)
+	requireLen(t, obs, 2)
+	if o := obs[0]; o.Subject != "payments/api" || o.Evidence != Confirmed || o.Action != "deny" || o.Hits != 3 {
+		t.Errorf("obs[0] = %+v, want only the joined payments/api row", o)
+	}
+	if o := obs[1]; o.Subject != "shop/web" || o.Evidence != DNSOnly {
+		t.Errorf("obs[1] = %+v, want shop/web DNS only", o)
+	}
+}
