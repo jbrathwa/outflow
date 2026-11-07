@@ -50,6 +50,7 @@ func TestClassify(t *testing.T) {
 		{"NL DNS only", dest("a.com", "", DNSOnly, locNL), us, Unknown, ""},
 		{"global", dest("a.com", "allow", Confirmed, locGlobal), us, Unknown, ""},
 		{"no location", dest("a.com", "allow", Confirmed, locNone), us, Unknown, ""},
+		{"no location deny", dest("a.com", "deny", Confirmed, locNone), us, Unknown, ""},
 		{"exception", dest("API.Stripe.com.", "allow", Confirmed, locNL), usExc, Inside, "PCI vendor"},
 		{"exception lookalike", dest("evilstripe.com", "allow", Confirmed, locNL), usExc, Outside, ""},
 		{"country allows region", dest("a.com", "allow", Confirmed, locCentral), us, Inside, ""},
@@ -167,6 +168,31 @@ func TestBuildWorkloadStatusIgnoresDenied(t *testing.T) {
 	}
 }
 
+func TestBuildDeniedNeverCounts(t *testing.T) {
+	s := build([]string{"payments/api", "jobs/blocked"}, []flow{
+		{"payments/api", "us.example.com", ipUS, "allow", 1},
+		{"payments/api", "x.example.com", ipUnknown, "deny", 4},
+		{"jobs/blocked", "nl.example.com", ipNL, "deny", 1},
+		{"jobs/blocked", "y.example.com", ipUnknown, "deny", 1},
+	})
+	r := Build(s, seedDB(t), rule("warn", "US"))
+	w := row(t, r, "payments/api")
+	if w.Status != Inside || w.Unknown != 0 {
+		t.Errorf("payments row = %+v", w)
+	}
+	for _, d := range w.Destinations {
+		if d.Domain == "x.example.com" && d.Status != Unknown {
+			t.Errorf("denied unknown status = %q", d.Status)
+		}
+	}
+	if b := row(t, r, "jobs/blocked"); b.Status != NoTraffic || b.Outside != 0 || b.Unknown != 0 || len(b.Destinations) != 2 {
+		t.Errorf("all-denied row = %+v", b)
+	}
+	if c := r.Counts; c.Unknown != 0 || c.Outside != 0 || c.Inside != 1 || c.Destinations != 4 {
+		t.Errorf("counts = %+v", c)
+	}
+}
+
 func TestBuildNeutralMode(t *testing.T) {
 	s := build([]string{"shop/web", "jobs/idle", "payments/api"}, []flow{
 		{"shop/web", "us.example.com", ipUS, "allow", 1},
@@ -257,12 +283,13 @@ func TestBuildSortOrder(t *testing.T) {
 }
 
 func TestBuildUnknownIgnore(t *testing.T) {
-	s := build([]string{"shop/web"}, []flow{
+	s := build([]string{"shop/web", "jobs/dark"}, []flow{
 		{"shop/web", "us.example.com", ipUS, "allow", 1},
 		{"shop/web", "x.example.com", ipUnknown, "allow", 1},
+		{"jobs/dark", "z.example.com", ipUnknown, "allow", 1},
 	})
 	warn := Build(s, seedDB(t), rule("warn", "US"))
-	if w := row(t, warn, "shop/web"); w.Status != Unknown || w.Unknown != 1 || warn.Counts.Unknown != 1 {
+	if w := row(t, warn, "shop/web"); w.Status != Unknown || w.Unknown != 1 || warn.Counts.Unknown != 2 {
 		t.Errorf("warn: row %+v counts %+v", w, warn.Counts)
 	}
 	ign := Build(s, seedDB(t), rule("ignore", "US"))
@@ -275,7 +302,10 @@ func TestBuildUnknownIgnore(t *testing.T) {
 			t.Errorf("ignored destination still listed as unknown, got %q", d.Status)
 		}
 	}
-	if len(w.Destinations) != 2 || ign.Counts.Destinations != 2 {
+	if d := row(t, ign, "jobs/dark"); d.Status != NoTraffic || len(d.Destinations) != 1 {
+		t.Errorf("all-ignored row = %+v", d)
+	}
+	if len(w.Destinations) != 2 || ign.Counts.Destinations != 3 {
 		t.Errorf("destinations dropped: %+v", w.Destinations)
 	}
 }
@@ -307,7 +337,7 @@ func TestBuildSaaSAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{`"schemaVersion":1`, `"ruleConfigured":true`, `"locationData":`, `"counts":`, `"destinations":`, `"subject":"payments/api"`, `"evidence":"confirmed"`, `"lastSeen":`} {
+	for _, k := range []string{`"schemaVersion":1`, `"ruleConfigured":true`, `"locationData":`, `"counts":`, `"destinations":`, `"subject":"payments/api"`, `"evidence":"confirmed"`, `"lastSeen":`, `"howKnown":`, `"mode":"unrestricted"`} {
 		if !strings.Contains(string(b), k) {
 			t.Errorf("json missing %s: %s", k, b)
 		}

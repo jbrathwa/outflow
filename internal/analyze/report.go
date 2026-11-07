@@ -105,7 +105,7 @@ func Build(s model.Snapshot, db *location.DB, cfg config.Config) Report {
 			if d.Location.Known() {
 				countries[d.Location.Country] = true
 			}
-			if r == nil || !counts(d.Status, r) {
+			if r == nil || !counts(d, r) {
 				continue
 			}
 			switch d.Status {
@@ -147,9 +147,9 @@ func finishRow(w *WorkloadResult, r *config.Residency) {
 		w.Status = NoTraffic
 		return
 	}
-	w.Status = Inside // nothing counted (all denied or ignored) means nothing left the allowed area
+	w.Status = NoTraffic // stays so when nothing counts (all denied or ignored)
 	for _, d := range w.Destinations {
-		if !counts(d.Status, r) {
+		if !counts(d, r) {
 			continue
 		}
 		switch d.Status {

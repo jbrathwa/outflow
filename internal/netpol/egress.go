@@ -23,9 +23,9 @@ const (
 
 // Result is the evaluated egress posture.
 type Result struct {
-	Mode     Mode
-	Ports    string   // e.g. "443" or "80,443"; empty when unrestricted or not uniform
-	Policies []string // names of policies selecting the workload
+	Mode     Mode     `json:"mode"`
+	Ports    string   `json:"ports"`    // e.g. "443" or "80,443"; empty when unrestricted or not uniform
+	Policies []string `json:"policies"` // names of policies selecting the workload
 }
 
 // String renders "mode" or "mode:ports".

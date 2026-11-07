@@ -18,12 +18,12 @@ const (
 
 // Location is the result of an IP lookup.
 type Location struct {
-	Country  string
-	Provider string
-	Region   string
-	Service  string
-	Global   bool
-	HowKnown HowKnown
+	Country  string   `json:"country"`
+	Provider string   `json:"provider"`
+	Region   string   `json:"region"`
+	Service  string   `json:"service"`
+	Global   bool     `json:"global"`
+	HowKnown HowKnown `json:"howKnown"`
 }
 
 // Known reports whether a concrete country is known.

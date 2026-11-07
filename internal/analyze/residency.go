@@ -48,9 +48,13 @@ func Classify(d Destination, r *config.Residency, workloadID string) (Status, st
 	return Outside, ""
 }
 
-// counts reports whether a destination status counts toward workload status and totals.
-func counts(s Status, r *config.Residency) bool {
-	switch s {
+// counts reports whether a destination counts toward workload status and totals.
+// Denied traffic never left, so it never counts, whatever its location.
+func counts(d Destination, r *config.Residency) bool {
+	if d.Action == "deny" {
+		return false
+	}
+	switch d.Status {
 	case Outside, Inside:
 		return true
 	case Unknown:
