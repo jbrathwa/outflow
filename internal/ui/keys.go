@@ -35,7 +35,7 @@ func newKeyMap() keyMap {
 		Filter:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 		Status:     key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "status")),
 		Exception:  key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "exception")),
-		Rerun:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rerun")),
+		Rerun:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		ForceQuit:  key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),

@@ -175,7 +175,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 
 	// Required: K8s API plus at least one traffic source; when the CNI
 	// SNATs pod traffic the DNS checks are mandatory (set above), and so is
-	// the absence of NodeLocal DNS (below). A source
+	// the absence of a local DNS cache (below). A source
 	// is available when ok or warn, so only fail trips Failed().
 	dnsAvail := available(plug.State) && available(coll.State)
 	if !snat && !available(fw.State) && !dnsAvail {

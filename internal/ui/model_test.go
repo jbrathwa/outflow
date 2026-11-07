@@ -601,7 +601,7 @@ func TestQuitCancelsRefreshContext(t *testing.T) {
 func TestHelpToggle(t *testing.T) {
 	m := sized(New(demoReport(t, true), nil), 140, 40)
 	short := m.View()
-	for _, want := range []string{"↑/↓ move", "enter detail", "/ filter", "f status", "e exception", "r rerun", "? help", "q quit"} {
+	for _, want := range []string{"↑/↓ move", "enter detail", "/ filter", "f status", "e exception", "r refresh", "? help", "q quit"} {
 		if !strings.Contains(short, want) {
 			t.Errorf("short help missing %q:\n%s", want, short)
 		}
