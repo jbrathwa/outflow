@@ -64,6 +64,9 @@ type LogAnalytics struct {
 	Tokens   TokenSource
 	HTTP     *http.Client
 	Timeout  time.Duration // per request, applied through the context
+	// OnResult, when set, is called after every HTTP response with the workspace and
+	// status code (0 on a transport error). Used for the azure-access summary.
+	OnResult func(workspace string, status int)
 }
 
 // NewLogAnalytics returns a client for the public cloud endpoint.
@@ -124,6 +127,13 @@ func (c *LogAnalytics) Query(ctx context.Context, name, workspace, kql string, w
 		hc = http.DefaultClient
 	}
 	resp, err := hc.Do(req)
+	if c.OnResult != nil {
+		status := 0
+		if err == nil {
+			status = resp.StatusCode
+		}
+		c.OnResult(workspace, status)
+	}
 	if err != nil {
 		collect.Debugf("query %s workspace %s error=transport", name, mask)
 		return Table{}, fmt.Errorf("log analytics request: %w", err)
