@@ -271,3 +271,33 @@ func TestProbeScrubKeepsTimestamps(t *testing.T) {
 		t.Fatalf("%+v", sts)
 	}
 }
+
+func TestProbeScrubIPv6AfterColon(t *testing.T) {
+	for in, want := range map[string]string{
+		"addr:fd00::5 odd":       "addr:x.x.x.x odd",
+		"client:2001:db8::1 odd": "client:x.x.x.x odd",
+		"v6 ::1 odd":             "v6 x.x.x.x odd",
+	} {
+		s := sampleServer(t, []string{in})
+		sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
+		if !strings.Contains(sts[1].Detail, want) {
+			t.Errorf("%q: %s", in, sts[1].Detail)
+		}
+	}
+}
+
+func TestProbeNoTable(t *testing.T) {
+	s := lafake.New(t, map[string]lafake.Handler{
+		"dns-sample": func(lafake.Call) (lafake.Response, int) {
+			return lafake.Response{ErrorCode: "SemanticError", ErrorMessage: "Failed to resolve table 'ContainerLogV2'"}, 400
+		},
+	})
+	sts := dnsSource(s.URL, dnsWS).Probe(context.Background(), dnsScope())
+	wantIDs(t, sts)
+	want := "ContainerLogV2 not found in workspace …000a (enable Container Insights with ContainerLogV2 and include kube-system)"
+	for _, st := range sts {
+		if st.State != "missing" || st.Detail != want {
+			t.Fatalf("%+v", st)
+		}
+	}
+}

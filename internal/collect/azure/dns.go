@@ -66,7 +66,8 @@ func (d *DNSSource) workspace() string {
 	return d.Target.DNSWorkspace
 }
 
-// Lookups returns per-minute lookup counts by pod IP and external domain.
+// Lookups returns per-minute lookup counts by pod IP and external domain. It returns only
+// the coredns-logs-collected status; the format check is Probe's job.
 func (d *DNSSource) Lookups(ctx context.Context, sc collect.Scope) ([]model.DNSLookup, []model.SourceStatus) {
 	ws := d.workspace()
 	if ws == "" {
@@ -154,8 +155,14 @@ func scrubIPs(s string) string {
 	s = ipv4Re.ReplaceAllString(s, "x.x.x.x")
 	// Only redact candidates that really parse as IPv6, so 12:30:45 timestamps survive.
 	return ipv6Re.ReplaceAllStringFunc(s, func(c string) string {
-		if _, err := netip.ParseAddr(c); err == nil {
-			return "x.x.x.x"
+		// Delimiter colons ("client:fd00::5") may stick to the candidate: try
+		// stripping them one at a time from either end and keep them in the output.
+		for l := 0; l <= 1 && l < len(c); l++ {
+			for r := 0; r <= 1 && l+r < len(c); r++ {
+				if _, err := netip.ParseAddr(c[l : len(c)-r]); err == nil {
+					return c[:l] + "x.x.x.x" + c[len(c)-r:]
+				}
+			}
 		}
 		return c
 	})
