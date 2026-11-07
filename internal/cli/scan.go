@@ -57,6 +57,9 @@ func scan(stdout, stderr io.Writer, snap model.Snapshot, db *location.DB, cfg co
 		if !report.RuleConfigured {
 			return fail(errors.New("--fail-on needs a residency rule in outflow.yaml"))
 		}
+		if failOn == "unknown" && cfg.Residency.UnknownLocation == "ignore" {
+			return fail(errors.New("--fail-on unknown conflicts with unknown_location: ignore"))
+		}
 		switch {
 		case cov.Level == doctor.None:
 			return fail(errors.New("--fail-on cannot judge anything: coverage is NONE (no traffic sources); run outflow doctor"))

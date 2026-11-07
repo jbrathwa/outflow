@@ -257,3 +257,47 @@ func TestUnknownFlagAndCommand(t *testing.T) {
 		}
 	}
 }
+
+// unknownOnlyConfig allows every country the demo reaches, so outside = 0 and only
+// unknown (global / DNS-only) destinations remain, at FULL coverage.
+func unknownOnlyConfig(t *testing.T, unknown string) string {
+	t.Helper()
+	y := "residency:\n  allow:\n    countries: [US, NL, IE, FR]\n"
+	if unknown != "" {
+		y += "  unknown_location: " + unknown + "\n"
+	}
+	return writeFile(t, "outflow.yaml", []byte(y))
+}
+
+func TestUnknownGates(t *testing.T) {
+	warn := unknownOnlyConfig(t, "")
+	if code, _, e := run(t, "scan", "--demo", "--config", warn, "--fail-on", "outside"); code != 0 {
+		t.Fatalf("outside with only unknowns: code=%d %s", code, e)
+	}
+	if code, _, _ := run(t, "scan", "--demo", "--config", warn, "--fail-on", "unknown"); code != 2 {
+		t.Fatalf("--fail-on unknown: code=%d, want 2", code)
+	}
+	fail := unknownOnlyConfig(t, "fail")
+	if code, _, _ := run(t, "scan", "--demo", "--config", fail, "--fail-on", "outside"); code != 2 {
+		t.Fatalf("unknown_location: fail: code=%d, want 2", code)
+	}
+}
+
+func TestFailOnUnknownConflictsWithIgnore(t *testing.T) {
+	cfg := unknownOnlyConfig(t, "ignore")
+	code, out, stderr := run(t, "scan", "--demo", "--config", cfg, "--fail-on", "unknown")
+	if code != 1 || out != "" || !strings.Contains(stderr, "--fail-on unknown conflicts with unknown_location: ignore") {
+		t.Fatalf("code=%d out=%q stderr=%q", code, out, stderr)
+	}
+}
+
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, os.ErrClosed }
+
+func TestDumpDemoWriteError(t *testing.T) {
+	var errb bytes.Buffer
+	if code := Run([]string{"--dump-demo"}, nil, failWriter{}, &errb, nil); code != 1 {
+		t.Fatalf("code=%d", code)
+	}
+}

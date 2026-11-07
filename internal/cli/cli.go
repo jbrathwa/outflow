@@ -117,7 +117,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		return exitError
 	}
 	if c.dumpDemo {
-		stdout.Write(fixtures.DemoJSON())
+		if _, err := stdout.Write(fixtures.DemoJSON()); err != nil {
+			fmt.Fprintf(stderr, "outflow: write demo: %v\n", err)
+			return exitError
+		}
 		return exitOK
 	}
 	fail := func(err error) int {
