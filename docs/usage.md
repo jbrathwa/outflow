@@ -118,10 +118,10 @@ Evidence levels:
 | `confirmed` | The workload looked the domain up, matching firewall traffic left from its node, and no other workload on that node looked up the same domain in the window |
 | `likely` | As `confirmed`, but another workload on the same node looked up the domain too, so the flow cannot be tied to one of them. Each candidate gets `likely`, and the detail pane names the others |
 | `DNS only` | A lookup with no matching firewall traffic |
-| `node-level` | Firewall traffic with no matching lookup (for example a hard-coded IP). Shown as a `(node) <name>` row, never assigned to a workload. `hostNetwork` pods also land here, because their lookups come from the node IP |
+| `node-level` | Firewall traffic tied only to a node: no matching lookup (for example a hard-coded IP), or a lookup from the node IP by a `hostNetwork` pod. Shown as a `(node) <name>` row, never assigned to a workload. A `hostNetwork` lookup with no matching firewall traffic is `DNS only` on that row |
 
 How a location is known: `cloud range` (published Azure, AWS or GCP ranges with
-a region; high confidence), `GeoIP` (country database; medium), `anycast / CDN`
+a region; high confidence), `GeoIP` (country database; medium), `anycast/CDN`
 (location `global`, so unknown for the rule), or nothing matched (unknown). The
 detail pane also says whether the IP was resolved by outflow or came from a
 firewall log.
