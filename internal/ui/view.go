@@ -345,8 +345,8 @@ func destGlyph(st styles, s analyze.Status) (string, lipgloss.Style) {
 	switch s {
 	case analyze.Outside:
 		return "✖", st.Out
-	case analyze.OutsideDenied:
-		return "✖ (denied)", st.Muted
+	case analyze.OutsideDenied: // EVIDENCE says "denied"
+		return "✖", st.Muted
 	case analyze.Unknown:
 		return "?", st.Unk
 	case analyze.Inside:
@@ -371,7 +371,12 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 		return strings.Join(append(out, " "+st.Muted.Render("no destinations observed")), "\n"), 0
 	}
 
-	cols := []col{{"DESTINATION", 0, false}, {"LOCATION", 22, false}, {"HOW KNOWN", 12, false}, {"EVIDENCE", 9, false}, {"SEEN", 5, true}}
+	evW := len("EVIDENCE")
+	for _, d := range dests {
+		evW = max(evW, ansi.StringWidth(evidenceCell(d)))
+	}
+	cols := []col{{"DESTINATION", 0, false}, {"LOCATION", 22, false}, {"HOW KNOWN", 12, false},
+		{"PORT", 5, true}, {"EVIDENCE", evW, false}, {"SEEN", 5, true}}
 	if width < 80 {
 		cols = append(cols[:2], cols[3:]...) // drop HOW KNOWN when narrow
 	}
@@ -392,18 +397,10 @@ func (m Model) detailContent(w analyze.WorkloadResult, width int) (string, int) 
 		}
 		glyph, gs := destGlyph(st, d.Status)
 		if m.report.RuleConfigured && glyph != "" {
-			if d.Status == analyze.OutsideDenied {
-				name = st.Muted.Render(glyph) + " " + name
-			} else {
-				name = gs.Render(glyph) + " " + name
-			}
+			name = gs.Render(glyph) + " " + name
 		}
-		ev := string(d.Evidence)
-		if d.Evidence == analyze.Likely {
-			ev = "likely"
-		}
-		vals := []string{name, d.Location.String(), string(d.Location.HowKnown), ev, fmtCount(d.Hits)}
-		if len(cols) == 4 {
+		vals := []string{name, d.Location.String(), string(d.Location.HowKnown), portCell(d.Port), evidenceCell(d), fmtCount(d.Hits)}
+		if len(cols) < len(vals) {
 			vals = append(vals[:2], vals[3:]...)
 		}
 		var cells []string
@@ -438,7 +435,7 @@ func destNotes(d analyze.Destination) []string {
 	}
 	var n []string
 	add := func(s string) { n = append(n, name+": "+s) }
-	if d.Status == analyze.OutsideDenied {
+	if d.Action == "deny" {
 		add("blocked by the firewall (denied)")
 	}
 	if d.SaaS {

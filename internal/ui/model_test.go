@@ -617,3 +617,34 @@ func TestEgressColumnShowsPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailShowsPortAndDeny(t *testing.T) {
+	for _, ruled := range []bool{true, false} {
+		rep := demoReport(t, ruled)
+		m := sized(New(rep, nil), 140, 40)
+		var sf analyze.WorkloadResult
+		for _, w := range rep.Workloads {
+			if w.ID == "shop/storefront" {
+				sf = w
+			}
+		}
+		for _, width := range []int{77, 100} {
+			content, _ := m.detailContent(sf, width)
+			lines := strings.Split(content, "\n")
+			if h := lineIndex(lines, "DESTINATION"); h < 0 || !strings.Contains(lines[h], "PORT") {
+				t.Errorf("ruled=%v width=%d: no PORT column:\n%s", ruled, width, content)
+			}
+			deny := lines[max(lineIndex(lines, " api.segment.io"), 0)]
+			if !strings.Contains(deny, "confirmed · denied") || !strings.Contains(deny, "443") {
+				t.Errorf("ruled=%v width=%d: deny row %q, want port 443 and confirmed · denied", ruled, width, deny)
+			}
+			allow := lines[max(lineIndex(lines, "stshopassets"), 0)]
+			if strings.Contains(allow, "denied") || !strings.Contains(allow, "443") {
+				t.Errorf("ruled=%v width=%d: allow row %q", ruled, width, allow)
+			}
+			if !strings.Contains(content, "api.segment.io: blocked by the firewall (denied)") {
+				t.Errorf("ruled=%v width=%d: missing deny note:\n%s", ruled, width, content)
+			}
+		}
+	}
+}

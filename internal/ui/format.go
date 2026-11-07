@@ -92,3 +92,20 @@ func egressCell(w analyze.WorkloadResult) string {
 	}
 	return w.Egress.String()
 }
+
+// evidenceCell is the EVIDENCE column text; denied traffic says so in every mode.
+func evidenceCell(d analyze.Destination) string {
+	ev := string(d.Evidence)
+	if d.Action == "deny" {
+		ev += " · denied"
+	}
+	return ev
+}
+
+// portCell is the PORT column text; "—" when no port was seen (DNS only).
+func portCell(p int) string {
+	if p == 0 {
+		return "—"
+	}
+	return fmt.Sprint(p)
+}
