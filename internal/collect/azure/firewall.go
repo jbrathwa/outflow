@@ -166,6 +166,11 @@ func (f *FirewallSource) Probe(ctx context.Context, sc collect.Scope) (string, m
 	if len(t.Rows) == 0 {
 		return d.name, model.SourceStatus{ID: model.SrcFirewall, State: "warn", Detail: "no firewall events from this cluster's nodes in the last 24h"}
 	}
+	if ri := t.Col("_ResourceId"); ri >= 0 && ri < len(t.Rows[0]) {
+		if s, ok := t.Rows[0][ri].(string); ok && s != "" {
+			d.name = firewallName(s)
+		}
+	}
 	if !d.app && !d.net {
 		return d.name, model.SourceStatus{ID: model.SrcFirewall, State: "warn", Detail: "legacy AzureDiagnostics tables (parsed best effort)"}
 	}
@@ -204,7 +209,7 @@ func (f *FirewallSource) Events(ctx context.Context, sc collect.Scope) ([]model.
 		}
 	}
 	var out []model.EgressEvent
-	name := d.name
+	name := "" // from this cluster's own rows; the workspace-wide detect row is the fallback
 	rows, skipped, truncated := 0, 0, false
 	for _, q := range qs {
 		t, tr, err := f.LA.QuerySplit(ctx, q.name, ws,
@@ -232,6 +237,9 @@ func (f *FirewallSource) Events(ctx context.Context, sc collect.Scope) ([]model.
 			}
 			out = append(out, ev)
 		}
+	}
+	if name == "" {
+		name = d.name
 	}
 	var last time.Time
 	total := 0

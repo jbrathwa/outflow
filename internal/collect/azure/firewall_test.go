@@ -304,3 +304,26 @@ func TestEventsEmptyDestinationAndBadLegacyActionUnreadable(t *testing.T) {
 		t.Fatalf("legacy: %+v %+v", evs, st)
 	}
 }
+
+func TestFirewallNamePrefersThisClustersRows(t *testing.T) {
+	other := "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-hub/providers/Microsoft.Network/azureFirewalls/fw-other"
+	s := fwServerProbe(t, [][]any{{"app", other}},
+		[][]any{{"10.224.0.4", "a.example", float64(443), "HTTPS", "Allow", "r", "2026-11-07T09:01:00Z", float64(1), fwRID}},
+		nil, nil, [][]any{{"10.224.0.4", fwRID}})
+	if _, name, _ := fwSource(s.URL, fwWS).Events(context.Background(), fwScope()); name != "fw-hub-eus" {
+		t.Fatalf("events name %q", name)
+	}
+	if name, _ := fwSource(s.URL, fwWS).Probe(context.Background(), fwScope()); name != "fw-hub-eus" {
+		t.Fatalf("probe name %q", name)
+	}
+	// No resource ID on the cluster's rows: fall back to the detect row.
+	s = fwServerProbe(t, [][]any{{"app", other}},
+		[][]any{{"10.224.0.4", "a.example", float64(443), "HTTPS", "Allow", "r", "2026-11-07T09:01:00Z", float64(1), ""}},
+		nil, nil, [][]any{{"10.224.0.4", ""}})
+	if _, name, _ := fwSource(s.URL, fwWS).Events(context.Background(), fwScope()); name != "fw-other" {
+		t.Fatalf("fallback events name %q", name)
+	}
+	if name, _ := fwSource(s.URL, fwWS).Probe(context.Background(), fwScope()); name != "fw-other" {
+		t.Fatalf("fallback probe name %q", name)
+	}
+}
