@@ -35,13 +35,15 @@ type azureTags struct {
 	} `json:"values"`
 }
 
-type azureCand struct{ region, service string }
+// rangeCand is one (region, service) candidate for a prefix.
+type rangeCand struct{ region, service string }
 
 // better reports whether a should replace b for the same prefix: a service
-// other than AzureCloud wins, then the lexically smallest service, then region.
-func (a azureCand) better(b azureCand) bool {
-	if (a.service == "AzureCloud") != (b.service == "AzureCloud") {
-		return b.service == "AzureCloud"
+// other than the aggregate one wins, then the lexically smallest service,
+// then region.
+func (a rangeCand) better(b rangeCand, aggregate string) bool {
+	if (a.service == aggregate) != (b.service == aggregate) {
+		return b.service == aggregate
 	}
 	if a.service != b.service {
 		return a.service < b.service
@@ -49,18 +51,38 @@ func (a azureCand) better(b azureCand) bool {
 	return a.region < b.region
 }
 
+// pickCloud turns regional and regionless candidates into rows: a regional
+// candidate beats a regionless (global) one for the same prefix.
+func pickCloud(provider string, regional, regionless map[netip.Prefix]rangeCand) []cloudRow {
+	var rows []cloudRow
+	for p, c := range regional {
+		rows = append(rows, cloudRow{p, provider, c.region, c.service, false})
+	}
+	for p, c := range regionless {
+		if _, ok := regional[p]; !ok {
+			rows = append(rows, cloudRow{p, provider, "", c.service, true})
+		}
+	}
+	return rows
+}
+
+// putCand records c for p unless a better candidate is already there.
+func putCand(m map[netip.Prefix]rangeCand, p netip.Prefix, c rangeCand, aggregate string) {
+	if old, ok := m[p]; !ok || c.better(old, aggregate) {
+		m[p] = c
+	}
+}
+
 func convertAzure(r io.Reader, version string) (Dataset, error) {
 	var tags azureTags
 	if err := json.NewDecoder(r).Decode(&tags); err != nil {
 		return Dataset{}, fmt.Errorf("decode Azure service tags: %w", err)
 	}
-	regional := map[netip.Prefix]azureCand{}
-	regionless := map[netip.Prefix]azureCand{}
+	regional := map[netip.Prefix]rangeCand{}
+	regionless := map[netip.Prefix]rangeCand{}
 	cdn := map[netip.Prefix]bool{}
-	put := func(m map[netip.Prefix]azureCand, p netip.Prefix, c azureCand) {
-		if old, ok := m[p]; !ok || c.better(old) {
-			m[p] = c
-		}
+	put := func(m map[netip.Prefix]rangeCand, p netip.Prefix, c rangeCand) {
+		putCand(m, p, c, "AzureCloud")
 	}
 	for _, v := range tags.Values {
 		service, _, _ := strings.Cut(v.Name, ".")
@@ -74,21 +96,13 @@ func convertAzure(r io.Reader, version string) (Dataset, error) {
 			case v.Name == "AzureFrontDoor.Frontend":
 				cdn[p] = true
 			case v.Properties.Region != "":
-				put(regional, p, azureCand{v.Properties.Region, service})
+				put(regional, p, rangeCand{v.Properties.Region, service})
 			default:
-				put(regionless, p, azureCand{"", service})
+				put(regionless, p, rangeCand{"", service})
 			}
 		}
 	}
-	var cloud []cloudRow
-	for p, c := range regional {
-		cloud = append(cloud, cloudRow{p, "azure", c.region, c.service, false})
-	}
-	for p, c := range regionless {
-		if _, ok := regional[p]; !ok {
-			cloud = append(cloud, cloudRow{p, "azure", "", c.service, true})
-		}
-	}
+	cloud := pickCloud("azure", regional, regionless)
 	var cdnRows []cdnRow
 	for p := range cdn {
 		cdnRows = append(cdnRows, cdnRow{p, "Azure Front Door"})
