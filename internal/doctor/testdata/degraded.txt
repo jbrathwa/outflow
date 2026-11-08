@@ -19,8 +19,21 @@ Traffic
   ✔ Pod inventory           KubePodInventory in law-hub-eus
 
 Location
-  ✔ Cloud IP ranges         seed-2026-11-07
-  ✔ GeoIP database          country ranges loaded
+  ! Azure service tags      built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! AWS IP ranges           built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! GCP IP ranges           built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! CDN ranges              built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! DB-IP country database  built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
 
 Residency
   ✔ Rule                    outflow.yaml · allow US · 1 exception

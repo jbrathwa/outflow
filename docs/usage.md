@@ -82,10 +82,10 @@ outflow is read-only: get, list and watch, except `get` only on two ConfigMaps. 
 For Azure: **Log Analytics Reader** on each workspace and **Reader** on the AKS resource.
 Commands to grant them are in [the setup guide](setup.md#roles).
 
-**Location data refresh.** Before a live scan outflow downloads public location data. This
-needs no Azure or Kubernetes access, only outbound HTTPS GETs to `www.microsoft.com`,
-`download.microsoft.com`, `ip-ranges.amazonaws.com`, `www.gstatic.com`,
-`www.cloudflare.com`, `api.fastly.com` and `download.db-ip.com`.
+**Location data refresh.** Before a live scan outflow refreshes stale or missing public
+location data. This needs no Azure or Kubernetes access, only outbound HTTPS GETs to
+`www.microsoft.com`, `download.microsoft.com`, `ip-ranges.amazonaws.com`,
+`www.gstatic.com`, `www.cloudflare.com`, `api.fastly.com` and `download.db-ip.com`.
 It sends no cluster data, IPs or credentials. If a feature ever uses Azure access for
 location data, it is listed here.
 
@@ -269,7 +269,8 @@ outflow scan --snapshot snapshot.json --config outflow.yaml \
 ## Doctor
 
 `outflow doctor` prints a checklist grouped as Cluster, Traffic, Location,
-Residency and Access. Each line is `✔` (ok), `!` (degrades coverage), `✖`
+Residency and Access. The Location group has one line per location data source (see
+[Location data](#location-data)). Each line is `✔` (ok), `!` (degrades coverage), `✖`
 (missing) or `·` (informational). Missing items include why it matters, what you
 lose without it, and a fix. It ends with the coverage verdict and what outflow can
 and cannot answer. The fix steps are in [the setup guide](setup.md).
@@ -310,5 +311,10 @@ Downloaded data is kept in a cache folder: `~/Library/Caches/outflow` on macOS a
 `--snapshot`, `doctor` and `snapshot -o` never download; `--snapshot` reads whatever is in
 the cache. The download hosts are
 listed under [Permissions](#permissions).
+
+`outflow doctor` shows one row per source in its Location group, with the data's date and
+age, for example `20261102 · 6 days old`. A row warns when the source is older than its
+limit or when only the built-in sample is available. This does not change the coverage
+verdict.
 
 IP to Country Lite data by DB-IP (https://db-ip.com), licensed under CC BY 4.0.
