@@ -285,7 +285,9 @@ func TestLiveScanRefreshes(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
-	if !strings.Contains(stderr, "outflow: location data: refreshed azure, aws, gcp, cdn, geo") {
+	want := "outflow: location data: downloading azure, aws, gcp, cdn, geo (up to 60s; --no-refresh to skip)\n" +
+		"outflow: location data: refreshed azure, aws, gcp, cdn, geo\n"
+	if !strings.HasPrefix(stderr, want) {
 		t.Errorf("stderr = %q", stderr)
 	}
 	if e.hits.Load() == 0 {
@@ -361,7 +363,8 @@ func TestLiveScanHealsCorruptCache(t *testing.T) {
 	if strings.Contains(stderr, "could not be read") {
 		t.Errorf("stderr = %q", stderr)
 	}
-	if !strings.Contains(stderr, "outflow: location data: refreshed azure (aws, gcp, cdn, geo up to date)") {
+	if !strings.Contains(stderr, "outflow: location data: downloading azure (up to 60s; --no-refresh to skip)\n"+
+		"outflow: location data: refreshed azure (aws, gcp, cdn, geo up to date)") {
 		t.Errorf("stderr = %q", stderr)
 	}
 	if !strings.Contains(stdout, `"locationData": "azure 20261102`) {
@@ -399,5 +402,49 @@ func TestCorruptCacheWithoutRefreshHints(t *testing.T) {
 				t.Errorf("stderr = %q", stderr)
 			}
 		})
+	}
+}
+
+// hitsAtWrite records how many download requests had arrived when each line was written.
+type hitsAtWrite struct {
+	e     *locEnv
+	lines []string
+	hits  []int32
+}
+
+func (w *hitsAtWrite) Write(p []byte) (int, error) {
+	w.lines = append(w.lines, string(p))
+	w.hits = append(w.hits, w.e.hits.Load())
+	return len(p), nil
+}
+
+func TestDownloadingLineComesFirst(t *testing.T) {
+	e := withLocData(t)
+	if code, _, _ := run(t, "update-data"); code != 0 {
+		t.Fatal("seed failed")
+	}
+	// Make aws and geo stale.
+	c := locdata.Cache{Dir: e.dir}
+	for _, src := range []string{"aws", "geo"} {
+		m, _ := c.Meta(src)
+		m.Fetched = m.Fetched.Add(-40 * 24 * time.Hour)
+		b, _ := json.Marshal(m)
+		if err := os.WriteFile(filepath.Join(e.dir, src+".json"), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seeded := e.hits.Load()
+	w := &hitsAtWrite{e: e}
+	if _, err := loadLocation(t.Context(), w, &common{}, "scan"); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.lines) == 0 || w.lines[0] != "outflow: location data: downloading aws, geo (up to 60s; --no-refresh to skip)\n" {
+		t.Fatalf("lines = %q", w.lines)
+	}
+	if w.hits[0] != seeded {
+		t.Errorf("line printed after %d requests", w.hits[0]-seeded)
+	}
+	if e.hits.Load() == seeded {
+		t.Error("no downloads")
 	}
 }

@@ -46,6 +46,13 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 	hc := &http.Client{}
 	if refresh {
 		locdata.UserAgent = "outflow/" + Version
+		var due []locdata.Source
+		for _, s := range srcs {
+			if cache.Due(s) {
+				due = append(due, s)
+			}
+		}
+		downloadingLine(stderr, due)
 		results = locdata.Refresh(rctx, cache, hc, srcs, false)
 	}
 	db, issues, err := cache.Load(srcs)
@@ -53,6 +60,7 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 		return nil, err
 	}
 	if again := retrySources(srcs, results, issues); refresh && len(again) > 0 {
+		downloadingLine(stderr, again)
 		for _, r := range locdata.Refresh(rctx, cache, hc, again, true) {
 			for i := range results {
 				if results[i].Source == r.Source {
@@ -71,6 +79,19 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 		fmt.Fprintln(stderr, w)
 	}
 	return db, nil
+}
+
+// downloadingLine announces the sources about to be downloaded, if any.
+func downloadingLine(w io.Writer, srcs []locdata.Source) {
+	if len(srcs) == 0 {
+		return
+	}
+	names := make([]string, len(srcs))
+	for i, s := range srcs {
+		names[i] = s.Name
+	}
+	fmt.Fprintf(w, "outflow: location data: downloading %s (up to %ds; --no-refresh to skip)\n",
+		strings.Join(names, ", "), int(refreshTimeout.Seconds()))
 }
 
 // retrySources lists the sources with a load issue that the refresh skipped as

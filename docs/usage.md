@@ -295,9 +295,11 @@ service tags, AWS and GCP IP ranges, Cloudflare and Fastly ranges, and the DB-IP
 database. A small seed subset is built in, enough for `--demo` and for offline use.
 
 Before a live `scan` or interactive run, outflow refreshes any list older than 7 days
-(30 days for the country database) and prints one line to stderr, for example
-`outflow: location data: refreshed azure, aws, gcp, cdn (geo up to date)`. Refreshing takes
-at most 60 seconds in total. Pass `--no-refresh` to skip it, or run `outflow update-data`
+(30 days for the country database). It prints one line to stderr before downloading, for
+example `outflow: location data: downloading azure, aws, gcp, cdn (up to 60s; --no-refresh to skip)`,
+and one after, for example
+`outflow: location data: refreshed azure, aws, gcp, cdn (geo up to date)`. Nothing is
+printed when every list is fresh. Refreshing takes at most 60 seconds in total. Pass `--no-refresh` to skip it, or run `outflow update-data`
 to download everything now, whatever its age. `update-data` prints one line per source and
 exits 1 if any failed.
 

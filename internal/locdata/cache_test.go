@@ -260,3 +260,21 @@ func TestLoadZeroRowsIsAnIssue(t *testing.T) {
 		t.Errorf("azure = %+v", db.Sources()[0])
 	}
 }
+
+func TestDue(t *testing.T) {
+	c := cacheAt(t, fetched)
+	src := testSources()[0]
+	if !c.Due(src) {
+		t.Error("missing source should be due")
+	}
+	if err := c.Save("azure", azureData("v")); err != nil {
+		t.Fatal(err)
+	}
+	if c.Due(src) {
+		t.Error("fresh source should not be due")
+	}
+	c.Now = func() time.Time { return fetched.Add(8 * day) }
+	if !c.Due(src) {
+		t.Error("stale source should be due")
+	}
+}

@@ -45,13 +45,19 @@ func Refresh(ctx context.Context, c Cache, hc *http.Client, srcs []Source, force
 	return results
 }
 
+// Due reports whether a non-forced Refresh would download s: it is missing
+// from the cache or older than its MaxAge.
+func (c Cache) Due(s Source) bool {
+	m, ok := c.Meta(s.Name)
+	return !ok || c.now().Sub(m.Fetched) > s.MaxAge
+}
+
 func refreshOne(ctx context.Context, c Cache, hc *http.Client, s Source, force bool) Result {
 	res := Result{Source: s.Name, Label: s.Label}
-	if !force {
-		if m, ok := c.Meta(s.Name); ok && c.now().Sub(m.Fetched) <= s.MaxAge {
-			res.Status, res.Version = UpToDate, m.Version
-			return res
-		}
+	if !force && !c.Due(s) {
+		m, _ := c.Meta(s.Name)
+		res.Status, res.Version = UpToDate, m.Version
+		return res
 	}
 	start := time.Now()
 	ds, err := s.Fetch(ctx, hc, c.now())
