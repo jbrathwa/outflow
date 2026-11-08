@@ -461,6 +461,14 @@ func TestDoctorLocationRowsSample(t *testing.T) {
 	if rows[0].Name != "Azure service tags" || rows[4].Name != "DB-IP country database" {
 		t.Errorf("names = %q .. %q", rows[0].Name, rows[4].Name)
 	}
+	for _, c := range rows[:4] {
+		if c.Without != "most destinations in these ranges show as unknown" {
+			t.Errorf("%s without = %q", c.Name, c.Without)
+		}
+	}
+	if w := rows[4].Without; w != "destinations outside cloud ranges have no country" {
+		t.Errorf("geo without = %q", w)
+	}
 }
 
 func partsDB(t *testing.T, azureAge int, geoAge int, geoStale bool) *location.DB {

@@ -263,6 +263,9 @@ func locationChecks(db *location.DB) []Check {
 		case info.Sample:
 			ck.State, ck.Detail = Warn, "built-in sample only"
 			ck.Without = "most destinations in these ranges show as unknown"
+			if info.Name == "geo" {
+				ck.Without = "destinations outside cloud ranges have no country"
+			}
 			ck.Fix = fix
 		case info.Stale:
 			ck.State = Warn

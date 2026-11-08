@@ -139,7 +139,7 @@ Location
     without it: most destinations in these ranges show as unknown
   ! DB-IP country database  built-in sample only
     fix: run a live scan or outflow update-data
-    without it: most destinations in these ranges show as unknown
+    without it: destinations outside cloud ranges have no country
 
 Residency
   · Rule                    not configured
