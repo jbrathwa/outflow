@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/jbrathwa/outflow/internal/collect"
 )
 
 var serviceTagsRe = regexp.MustCompile(`https?://[^"'\s<>]+/ServiceTags_Public_(\d{8})\.json`)
@@ -127,6 +129,7 @@ func fetchAzure(pageURL string) Fetcher {
 		if err != nil {
 			return Dataset{}, err
 		}
+		collect.Debugf("location data azure: json from %s", hostOf(url))
 		body, err := httpGet(ctx, hc, url, maxBody)
 		if err != nil {
 			return Dataset{}, err

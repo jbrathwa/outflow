@@ -1,6 +1,7 @@
 package locdata
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jbrathwa/outflow/internal/collect"
 )
 
 func readFixture(t *testing.T, name string) []byte {
@@ -99,9 +102,16 @@ func TestFetchAzure(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	var dbg bytes.Buffer
+	collect.SetDebug(&dbg)
+	defer collect.SetDebug(nil)
 	ds, err := fetchAzure(srv.URL+"/page")(context.Background(), srv.Client(), time.Now())
 	if err != nil {
 		t.Fatal(err)
+	}
+	host := strings.TrimPrefix(srv.URL, "http://")
+	if want := "debug: location data azure: json from " + host + "\n"; dbg.String() != want {
+		t.Errorf("debug = %q, want %q", dbg.String(), want)
 	}
 	if ds.Version != "20261102" || len(ds.Files["cloud.csv"]) == 0 || len(ds.Files["cdn.csv"]) == 0 {
 		t.Fatalf("bad dataset %+v", ds)
