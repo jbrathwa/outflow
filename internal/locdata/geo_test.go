@@ -48,6 +48,19 @@ func TestConvertGeoRejectsEmpty(t *testing.T) {
 	}
 }
 
+func TestConvertGeoCapsDecompressedSize(t *testing.T) {
+	old := maxGeoDecompressed
+	t.Cleanup(func() { maxGeoDecompressed = old })
+	maxGeoDecompressed = int64(len(geoFixture))
+	if _, err := convertGeo(bytes.NewReader(gz(t, geoFixture)), "2026-11"); err != nil {
+		t.Fatalf("at the limit: %v", err)
+	}
+	ds, err := convertGeo(bytes.NewReader(gz(t, geoFixture+"192.0.2.9,192.0.2.9,US\n")), "2026-11")
+	if err == nil || ds.Files != nil || err.Error() != "DB-IP: decompressed file too large" {
+		t.Fatalf("got %v %v", ds, err)
+	}
+}
+
 func geoServer(t *testing.T, served map[string][]byte) *httptest.Server {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, ok := served[r.URL.Path]

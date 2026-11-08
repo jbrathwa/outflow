@@ -18,6 +18,25 @@ import (
 // maxGeoBody caps the compressed DB-IP download.
 const maxGeoBody = 256 << 20
 
+// maxGeoDecompressed caps the decompressed DB-IP CSV; a var so tests can lower it.
+var maxGeoDecompressed int64 = 1 << 30
+
+var errGeoTooLarge = errors.New("DB-IP: decompressed file too large")
+
+// capReader fails with errGeoTooLarge once more than left bytes are read.
+type capReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if c.left -= int64(n); c.left < 0 {
+		return 0, errGeoTooLarge
+	}
+	return n, err
+}
+
 // convertGeo reads the gzipped DB-IP country lite CSV and writes geo.csv.
 func convertGeo(r io.Reader, month string) (Dataset, error) {
 	zr, err := gzip.NewReader(r)
@@ -25,7 +44,7 @@ func convertGeo(r io.Reader, month string) (Dataset, error) {
 		return Dataset{}, errors.New("DB-IP: not a gzip file")
 	}
 	defer zr.Close()
-	cr := csv.NewReader(zr)
+	cr := csv.NewReader(&capReader{r: io.LimitReader(zr, maxGeoDecompressed+1), left: maxGeoDecompressed})
 	cr.FieldsPerRecord = -1
 	cr.ReuseRecord = true
 	var out bytes.Buffer
@@ -35,6 +54,9 @@ func convertGeo(r io.Reader, month string) (Dataset, error) {
 		rec, err := cr.Read()
 		if err == io.EOF {
 			break
+		}
+		if errors.Is(err, errGeoTooLarge) {
+			return Dataset{}, errGeoTooLarge
 		}
 		if err != nil {
 			return Dataset{}, fmt.Errorf("DB-IP: read database: %w", err)
