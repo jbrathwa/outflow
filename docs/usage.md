@@ -12,11 +12,12 @@ shows the result in a TUI or prints it.
 | `outflow scan` | Print a report and exit by `--fail-on` |
 | `outflow doctor` | Check data sources and report coverage |
 | `outflow snapshot -o <file>` | Collect live data and save it as a snapshot JSON file (`-` for stdout). The file is written with mode 0600 |
+| `outflow update-data` | Download fresh location data now (public files only) |
 | `outflow version` | Print the version |
 
 Without `--demo` or `--snapshot`, a command reads the cluster in the current
-kubeconfig context. Live collection is read-only; the only file outflow writes is
-the one named by `snapshot -o`.
+kubeconfig context. Live collection is read-only. The only files outflow writes are the
+one named by `snapshot -o` and the location data cache (see [Location data](#location-data)).
 
 ## Flags
 
@@ -34,6 +35,7 @@ Common flags (all commands):
 | `--since <duration>` | How far back to read, `5m` to `30d`. Default `24h`; for example `90m`, `7d` |
 | `--workspace <guid>` | Log Analytics workspace for DNS, pod and firewall logs. Overrides `sources` in `outflow.yaml` |
 | `--join-window <duration>` | How long after a DNS lookup a firewall event still counts, `1m` to `60m`. Default `5m` |
+| `--no-refresh` | Don't download location data before a live scan. See [Location data](#location-data) |
 | `--debug` | Print query diagnostics to stderr: query name, workspace (last four characters), duration, row count and column names. Never log data |
 
 `scan` flags:
@@ -78,6 +80,11 @@ outflow is read-only: get, list and watch, except `get` only on two ConfigMaps. 
 
 For Azure: **Log Analytics Reader** on each workspace and **Reader** on the AKS resource.
 Commands to grant them are in [the setup guide](setup.md#roles).
+
+**Location data refresh.** Before a live scan outflow downloads public location data. This
+needs no Azure or Kubernetes access, only outbound HTTPS GETs to `www.microsoft.com`, `download.microsoft.com`, `ip-ranges.amazonaws.com`, `www.gstatic.com`, `www.cloudflare.com`, `api.fastly.com` and `download.db-ip.com`.
+It sends no cluster data, IPs or credentials. If a feature ever uses Azure access for
+location data, it is listed here.
 
 ## Residency rule: `outflow.yaml`
 
@@ -186,7 +193,8 @@ outflow --snapshot snapshot.json --config outflow.yaml
 ```
 
 The snapshot is plain JSON. Location is computed when the snapshot is analysed,
-so newer location data applies to old snapshots.
+so the location data in your cache at that moment applies to old snapshots. Reading a
+snapshot never downloads anything.
 
 ## CI example
 
@@ -277,7 +285,27 @@ for real output.
 
 ## Location data
 
-The location data embedded in this build is a small seed subset of published
-cloud, CDN and GeoIP ranges. `doctor` reports its version.
+outflow maps IP addresses to cloud regions, CDNs and countries with public lists: Azure
+service tags, AWS and GCP IP ranges, Cloudflare and Fastly ranges, and the DB-IP country
+database. A small seed subset is built in, enough for `--demo` and for offline use.
+
+Before a live `scan` or interactive run, outflow refreshes any list older than 7 days
+(30 days for the country database) and prints one line to stderr, for example
+`outflow: location data: refreshed azure, aws, gcp, cdn (geo up to date)`. Refreshing takes
+at most 60 seconds in total. Pass `--no-refresh` to skip it, or run `outflow update-data`
+to download everything now, whatever its age. `update-data` prints one line per source and
+exits 1 if any failed.
+
+If a download fails, outflow prints a warning such as
+`outflow: warning: could not refresh Azure service tags (<error>); using data from 2026-10-30 (9 days old)`
+and carries on with the newest data it has, or the built-in sample
+data if it has none. A failed refresh never fails the scan.
+
+Downloaded data is kept in a cache folder: `~/Library/Caches/outflow` on macOS and
+`~/.cache/outflow` on Linux. Set `OUTFLOW_CACHE_DIR` to use another folder. `--demo` and
+`--demo-degraded` use only the built-in sample, so demo output stays the same.
+`--snapshot`, `doctor` and `snapshot -o` never download; `--snapshot` reads whatever is in
+the cache. The download hosts are
+listed under [Permissions](#permissions).
 
 IP to Country Lite data by DB-IP (https://db-ip.com), licensed under CC BY 4.0.

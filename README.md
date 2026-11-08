@@ -139,9 +139,10 @@ cluster with CoreDNS query logging switched off:
 
 ## Location data
 
-The location data embedded in this build is a small seed subset of published
-cloud, CDN and GeoIP ranges, enough for the demo and for tests. It is not a
-complete database.
+A live scan downloads fresh public cloud, CDN and country ranges first (public files only,
+no Azure or Kubernetes access); the built-in seed subset is only a fallback and the demo
+data. Use `--no-refresh` to skip the download, or `outflow update-data` to fetch now; see the
+[usage guide](docs/usage.md#location-data).
 
 IP to Country Lite data by DB-IP (https://db-ip.com), licensed under CC BY 4.0.
 

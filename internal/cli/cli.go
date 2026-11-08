@@ -18,7 +18,6 @@ import (
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/fixtures"
-	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
 )
 
@@ -44,6 +43,7 @@ Usage:
   outflow doctor [flags]     check data sources and coverage
   outflow snapshot -o <file> [flags]
                              collect a snapshot JSON file (- for stdout, mode 0600)
+  outflow update-data        download fresh location data now (public files only)
   outflow version
 
 Without --demo or --snapshot, outflow reads the cluster in the current kubeconfig
@@ -64,6 +64,7 @@ Common flags:
   --join-window <duration>
                          how long after a DNS lookup a firewall event still counts,
                          1m..60m (default 5m)
+  --no-refresh           don't download location data before a live scan
   --debug                print query diagnostics to stderr (no log data)
 
 Scan flags:
@@ -82,6 +83,7 @@ type common struct {
 	snapshot, config                              string
 	context, profile, since, workspace            string
 	joinWindow                                    string
+	noRefresh                                     bool
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -97,6 +99,7 @@ func (c *common) register(fs *flag.FlagSet) {
 	fs.StringVar(&c.workspace, "workspace", "", "")
 	fs.StringVar(&c.joinWindow, "join-window", "5m", "")
 	fs.BoolVar(&c.debug, "debug", false, "")
+	fs.BoolVar(&c.noRefresh, "no-refresh", false, "")
 }
 
 // isLive reports whether no offline source (--demo, --demo-degraded, --snapshot) was given.
@@ -115,6 +118,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	case "help":
 		fmt.Fprint(stdout, usage)
 		return exitOK
+	case "update-data":
+		return updateData(args, stdout, stderr)
 	case "", "scan", "doctor", "snapshot":
 	default:
 		fmt.Fprintf(stderr, "outflow: unknown command %q\n\n%s", cmd, usage)
@@ -199,7 +204,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	if err != nil {
 		return fail(err)
 	}
-	db, err := location.Embedded()
+	db, err := loadLocation(context.Background(), stderr, &c, cmd)
 	if err != nil {
 		return fail(fmt.Errorf("location data: %w", err))
 	}
