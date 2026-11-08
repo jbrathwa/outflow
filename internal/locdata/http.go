@@ -10,9 +10,17 @@ import (
 // maxBody caps every downloaded body.
 const maxBody = 64 << 20
 
-// httpGet performs an anonymous GET and returns at most limit bytes of the body.
-// A non-200 status reads as "HTTP <code> from <host>".
-func httpGet(ctx context.Context, hc *http.Client, url string, limit int64) ([]byte, error) {
+// statusError is a non-200 response; it reads as "HTTP <code> from <host>".
+type statusError struct {
+	Code int
+	Host string
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("HTTP %d from %s", e.Code, e.Host) }
+
+// httpOpen performs an anonymous GET and returns the body for streaming.
+// The caller must close it. A non-200 status is a *statusError.
+func httpOpen(ctx context.Context, hc *http.Client, url string) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -21,9 +29,19 @@ func httpGet(ctx context.Context, hc *http.Client, url string, limit int64) ([]b
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, req.URL.Host)
+		resp.Body.Close()
+		return nil, &statusError{resp.StatusCode, req.URL.Host}
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, limit))
+	return resp.Body, nil
+}
+
+// httpGet performs an anonymous GET and returns at most limit bytes of the body.
+func httpGet(ctx context.Context, hc *http.Client, url string, limit int64) ([]byte, error) {
+	body, err := httpOpen(ctx, hc, url)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	return io.ReadAll(io.LimitReader(body, limit))
 }
