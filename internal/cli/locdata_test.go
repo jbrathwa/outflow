@@ -448,3 +448,38 @@ func TestDownloadingLineComesFirst(t *testing.T) {
 		t.Error("no downloads")
 	}
 }
+
+func TestLiveDoctorAndSnapshotNeverDownload(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args func(t *testing.T) []string
+	}{
+		{"doctor", func(*testing.T) []string { return []string{"doctor", "--workspace", wsA} }},
+		{"snapshot", func(t *testing.T) []string {
+			return []string{"snapshot", "-o", filepath.Join(t.TempDir(), "snap.json"), "--workspace", wsA}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := withLocData(t) // empty cache, auto-refresh on
+			withLive(t, aksState("AKS"), true)
+			run(t, tc.args(t)...)
+			if n := e.hits.Load(); n != 0 {
+				t.Errorf("requests = %d", n)
+			}
+		})
+	}
+}
+
+func TestSnapshotSkipsLocationData(t *testing.T) {
+	e := withLocData(t)
+	corruptCached(t, e)
+	withLive(t, aksState("AKS"), true)
+	p := filepath.Join(t.TempDir(), "snap.json")
+	code, _, stderr := run(t, "snapshot", "-o", p, "--workspace", wsA)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+	if strings.Contains(stderr, "location data") || strings.Contains(stderr, "could not be read") {
+		t.Errorf("snapshot loaded location data: %q", stderr)
+	}
+}

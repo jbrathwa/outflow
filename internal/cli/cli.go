@@ -207,6 +207,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	}
 	var db *location.DB
 	loadDB := func(ctx context.Context) bool {
+		if cmd == "snapshot" { // writes raw data only; never needs the database
+			return true
+		}
 		var err error
 		db, err = loadLocation(ctx, stderr, &c, cmd)
 		if err != nil {
