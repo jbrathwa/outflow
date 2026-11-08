@@ -270,7 +270,8 @@ outflow scan --snapshot snapshot.json --config outflow.yaml \
 
 `outflow doctor` prints a checklist grouped as Cluster, Traffic, Location,
 Residency and Access. The Location group has one line per location data source (see
-[Location data](#location-data)). Each line is `✔` (ok), `!` (degrades coverage), `✖`
+[Location data](#location-data)). Each line is `✔` (ok), `!` (degrades coverage, or a
+location source needs refreshing, which leaves coverage unchanged), `✖`
 (missing) or `·` (informational). Missing items include why it matters, what you
 lose without it, and a fix. It ends with the coverage verdict and what outflow can
 and cannot answer. The fix steps are in [the setup guide](setup.md).

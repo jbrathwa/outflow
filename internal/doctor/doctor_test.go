@@ -505,3 +505,22 @@ func TestLocationRowsDoNotChangeCoverage(t *testing.T) {
 		t.Errorf("sample %s vs fresh %s", sample.Coverage.Level, fresh.Coverage.Level)
 	}
 }
+
+func TestPrintStaleLocationRows(t *testing.T) {
+	d, err := location.Build([]location.Part{
+		{Info: location.SourceInfo{Name: "azure", Version: "20261030", AgeDays: 9, Stale: true}, FS: fstest.MapFS{}},
+		{Info: location.SourceInfo{Name: "geo", Version: "202610", AgeDays: 40, Stale: true}, FS: fstest.MapFS{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	Print(&buf, Run(demoSnap(t), d, demoCfg(t), true), false)
+	out := buf.String()
+	for _, want := range []string{"20261030 · 9 days old", "older than 7 days", "older than 30 days",
+		"fix: run a live scan or outflow update-data"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
