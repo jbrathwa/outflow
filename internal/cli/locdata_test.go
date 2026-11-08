@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,9 +24,18 @@ const geoCSV = "192.0.2.0,192.0.2.255,SE\n198.51.100.0,198.51.100.255,ZZ\n2001:d
 
 // locEnv is a fake download server plus a private cache folder.
 type locEnv struct {
-	hits atomic.Int32
-	dir  string
-	fail map[string]bool // paths answering 500
+	hits  atomic.Int32
+	dir   string
+	fail  map[string]bool // paths answering 500
+	mu    sync.Mutex
+	paths []string // request paths, in arrival order
+}
+
+// requested returns the request paths seen so far.
+func (e *locEnv) requested() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.paths)
 }
 
 func (e *locEnv) failing(p string) bool {
@@ -65,6 +76,9 @@ func withLocData(t *testing.T) *locEnv {
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		e.hits.Add(1)
 		p := r.URL.Path
+		e.mu.Lock()
+		e.paths = append(e.paths, p)
+		e.mu.Unlock()
 		switch {
 		case e.failing(p):
 			http.Error(w, "boom", 500)
@@ -135,7 +149,7 @@ func TestWarnLines(t *testing.T) {
 		"outflow: warning: could not refresh Azure service tags (HTTP 500 from example.test); using data from " +
 			now.Add(-9*24*time.Hour).UTC().Format("2006-01-02") + " (9 days old)",
 		"outflow: warning: could not refresh AWS IP ranges (timeout); using built-in sample data",
-		"outflow: warning: cached CDN ranges could not be read (bad csv); using built-in sample data",
+		"outflow: warning: cached CDN ranges could not be read (bad csv); using built-in sample data (run outflow update-data)",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -312,5 +326,78 @@ func TestLiveSetupErrorDoesNotDownload(t *testing.T) {
 	}
 	if e.hits.Load() != 0 {
 		t.Errorf("requests = %d", e.hits.Load())
+	}
+}
+
+// corruptCached seeds every source, then truncates azure's cached cloud.csv.
+func corruptCached(t *testing.T, e *locEnv) {
+	t.Helper()
+	if code, _, _ := run(t, "update-data"); code != 0 {
+		t.Fatal("seed failed")
+	}
+	m, ok := locdata.Cache{Dir: e.dir}.Meta("azure")
+	if !ok {
+		t.Fatal("azure not cached")
+	}
+	p := filepath.Join(e.dir, m.Dir, "cloud.csv")
+	if err := os.WriteFile(p, []byte("prefix,provider,region,service,global\n192.0.2.0/24,azu"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLiveScanHealsCorruptCache(t *testing.T) {
+	e := withLocData(t)
+	corruptCached(t, e)
+	before := len(e.requested())
+	withLive(t, aksState("AKS"), true)
+	code, stdout, stderr := run(t, "scan", "--workspace", wsA)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+	got := e.requested()[before:]
+	if want := []string{"/page", "/dl/ServiceTags_Public_20261102.json"}; !slices.Equal(got, want) {
+		t.Errorf("requests = %v, want %v", got, want)
+	}
+	if strings.Contains(stderr, "could not be read") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if !strings.Contains(stderr, "outflow: location data: refreshed azure (aws, gcp, cdn, geo up to date)") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if !strings.Contains(stdout, `"locationData": "azure 20261102`) {
+		t.Error("stdout lacks the cached azure version")
+	}
+}
+
+func TestCorruptCacheWithoutRefreshHints(t *testing.T) {
+	const warn = "outflow: warning: cached Azure service tags could not be read ("
+	const hint = "); using built-in sample data (run outflow update-data)\n"
+	for _, tc := range []struct {
+		name string
+		args func(t *testing.T) []string
+	}{
+		{"no-refresh", func(t *testing.T) []string {
+			withLive(t, aksState("AKS"), true)
+			return []string{"scan", "--workspace", wsA, "--no-refresh"}
+		}},
+		{"snapshot", func(t *testing.T) []string {
+			return []string{"scan", "--snapshot", snapshotFile(t, model.Snapshot{SchemaVersion: model.SchemaVersion})}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := withLocData(t)
+			corruptCached(t, e)
+			before := e.hits.Load()
+			code, _, stderr := run(t, tc.args(t)...)
+			if code != 0 {
+				t.Fatalf("code=%d stderr=%q", code, stderr)
+			}
+			if n := e.hits.Load() - before; n != 0 {
+				t.Errorf("requests = %d", n)
+			}
+			if !strings.Contains(stderr, warn) || !strings.Contains(stderr, hint) {
+				t.Errorf("stderr = %q", stderr)
+			}
+		})
 	}
 }

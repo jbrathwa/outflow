@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"testing/fstest"
 	"time"
 
 	"github.com/jbrathwa/outflow/internal/location"
@@ -146,13 +148,53 @@ func (c Cache) Save(source string, d Dataset) error {
 	return nil
 }
 
+// loadHook runs between reading the cached parts and the final build; tests
+// use it to simulate a concurrent Save cleaning up a folder.
+var loadHook func()
+
+// partFiles are the loader files a cached part may hold.
+var partFiles = []string{"cloud.csv", "cdn.csv", "geo.csv"}
+
+// readPart copies a cached folder's files into memory, so a concurrent Save
+// cleaning up the folder cannot change what Load sees. It also counts data rows.
+func readPart(dir string) (fstest.MapFS, int, error) {
+	fsys := fstest.MapFS{}
+	rows := 0
+	for _, name := range partFiles {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, 0, err
+		}
+		fsys[name] = &fstest.MapFile{Data: b, Mode: 0o600}
+		rows += dataRows(b)
+	}
+	return fsys, rows, nil
+}
+
+// dataRows counts the non-blank, non-comment lines after the header.
+func dataRows(b []byte) int {
+	n := 0
+	for i, l := range strings.Split(string(b), "\n") {
+		l = strings.TrimSpace(l)
+		if i > 0 && l != "" && !strings.HasPrefix(l, "#") {
+			n++
+		}
+	}
+	return n
+}
+
 // Load builds the database with one part per source, in srcs order, from the
 // cache where possible and from the built-in sample otherwise. A cached source
-// that fails to build is reported as a LoadIssue and replaced by its sample.
+// that fails to build or holds no rows is reported as a LoadIssue and replaced
+// by its sample. Each cached folder is read once, into memory.
 func (c Cache) Load(srcs []Source) (*location.DB, []LoadIssue, error) {
 	now := c.now()
 	var issues []LoadIssue
 	parts := make([]location.Part, 0, len(srcs))
+	var cached []string
 	for _, s := range srcs {
 		sample, ok := samplePart(s.Name)
 		if !ok {
@@ -163,9 +205,12 @@ func (c Cache) Load(srcs []Source) (*location.DB, []LoadIssue, error) {
 			parts = append(parts, sample)
 			continue
 		}
-		if !plainName(m.Dir) {
-			issues = append(issues, LoadIssue{s.Name, fmt.Errorf("invalid cache folder %q", m.Dir)})
+		fail := func(err error) {
+			issues = append(issues, LoadIssue{s.Name, err})
 			parts = append(parts, sample)
+		}
+		if !plainName(m.Dir) {
+			fail(fmt.Errorf("invalid cache folder %q", m.Dir))
 			continue
 		}
 		dir := filepath.Join(c.Dir, m.Dir)
@@ -173,8 +218,12 @@ func (c Cache) Load(srcs []Source) (*location.DB, []LoadIssue, error) {
 			if err == nil {
 				err = errors.New("not a directory")
 			}
-			issues = append(issues, LoadIssue{s.Name, fmt.Errorf("cached data unreadable: %w", err)})
-			parts = append(parts, sample)
+			fail(fmt.Errorf("cached data unreadable: %w", err))
+			continue
+		}
+		fsys, rows, err := readPart(dir)
+		if err != nil {
+			fail(fmt.Errorf("cached data unreadable: %w", err))
 			continue
 		}
 		age := now.Sub(m.Fetched)
@@ -186,18 +235,33 @@ func (c Cache) Load(srcs []Source) (*location.DB, []LoadIssue, error) {
 				AgeDays: int(age / day),
 				Stale:   age > s.MaxAge,
 			},
-			FS: os.DirFS(dir),
+			FS: fsys,
 		}
 		if _, err := location.Build([]location.Part{part}); err != nil {
-			issues = append(issues, LoadIssue{s.Name, err})
-			parts = append(parts, sample)
+			fail(err)
+			continue
+		}
+		if rows == 0 {
+			fail(errors.New("cached data has no rows"))
 			continue
 		}
 		parts = append(parts, part)
+		cached = append(cached, s.Name)
+	}
+	if loadHook != nil {
+		loadHook()
 	}
 	db, err := location.Build(parts)
-	if err != nil {
-		return nil, issues, err
+	if err == nil {
+		return db, issues, nil
+	}
+	// Should not happen with in-memory parts; never fail the scan over it.
+	for _, name := range cached {
+		issues = append(issues, LoadIssue{name, err})
+	}
+	db, serr := SampleOnly()
+	if serr != nil {
+		return nil, issues, serr
 	}
 	return db, issues, nil
 }

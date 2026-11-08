@@ -1,6 +1,7 @@
 package locdata
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,5 +217,46 @@ func TestSaveCleanupSparesRecentFolders(t *testing.T) {
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Errorf("old folder survived: %v", err)
+	}
+}
+
+func TestLoadSurvivesFolderRemovedAfterRead(t *testing.T) {
+	c := cacheAt(t, fetched)
+	ds := Dataset{Version: "v", Files: map[string][]byte{
+		"cloud.csv": []byte(cloudHeader + "203.0.113.0/24,azure,westeurope,CacheTest,false\n"),
+	}}
+	if err := c.Save("azure", ds); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := c.Meta("azure")
+	loadHook = func() { _ = os.RemoveAll(filepath.Join(c.Dir, m.Dir)) }
+	t.Cleanup(func() { loadHook = nil })
+	db, issues, err := c.Load(testSources())
+	if err != nil || len(issues) != 0 {
+		t.Fatalf("err=%v issues=%v", err, issues)
+	}
+	if a := db.Sources()[0]; a.Sample || a.Version != "v" {
+		t.Errorf("azure = %+v", a)
+	}
+	if l := db.Lookup(netip.MustParseAddr("203.0.113.9")); l.Service != "CacheTest" {
+		t.Errorf("lookup = %+v; cached rows were lost", l)
+	}
+}
+
+func TestLoadZeroRowsIsAnIssue(t *testing.T) {
+	c := cacheAt(t, fetched)
+	empty := Dataset{Version: "v", Files: map[string][]byte{"cloud.csv": []byte(cloudHeader)}}
+	if err := c.Save("azure", empty); err != nil {
+		t.Fatal(err)
+	}
+	db, issues, err := c.Load(testSources())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].Source != "azure" || !strings.Contains(issues[0].Err.Error(), "no rows") {
+		t.Fatalf("issues = %+v", issues)
+	}
+	if !db.Sources()[0].Sample {
+		t.Errorf("azure = %+v", db.Sources()[0])
 	}
 }

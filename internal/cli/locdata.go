@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,7 +26,8 @@ const refreshTimeout = 60 * time.Second
 
 // loadLocation builds the location database. --demo and --demo-degraded use the
 // built-in sample only. Otherwise it reads the cache, first refreshing stale
-// sources for a live scan or interactive run. Refresh problems only warn.
+// sources for a live scan or interactive run. A fresh cached source that cannot
+// be read is downloaded again once. Refresh problems only warn.
 func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) (*location.DB, error) {
 	if c.demo || c.demoDegraded {
 		return locdata.SampleOnly()
@@ -37,16 +39,30 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 	}
 	cache := locdata.Cache{Dir: dir}
 	srcs := locdata.Sources(locEndpoints)
+	refresh := autoRefresh && c.isLive() && !c.noRefresh && (cmd == "" || cmd == "scan")
 	var results []locdata.Result
-	if autoRefresh && c.isLive() && !c.noRefresh && (cmd == "" || cmd == "scan") {
+	rctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	defer cancel()
+	hc := &http.Client{}
+	if refresh {
 		locdata.UserAgent = "outflow/" + Version
-		rctx, cancel := context.WithTimeout(ctx, refreshTimeout)
-		results = locdata.Refresh(rctx, cache, &http.Client{}, srcs, false)
-		cancel()
+		results = locdata.Refresh(rctx, cache, hc, srcs, false)
 	}
 	db, issues, err := cache.Load(srcs)
 	if err != nil {
 		return nil, err
+	}
+	if again := retrySources(srcs, results, issues); refresh && len(again) > 0 {
+		for _, r := range locdata.Refresh(rctx, cache, hc, again, true) {
+			for i := range results {
+				if results[i].Source == r.Source {
+					results[i] = r
+				}
+			}
+		}
+		if db, issues, err = cache.Load(srcs); err != nil {
+			return nil, err
+		}
 	}
 	if l := refreshLine(results); l != "" {
 		fmt.Fprintln(stderr, l)
@@ -55,6 +71,21 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 		fmt.Fprintln(stderr, w)
 	}
 	return db, nil
+}
+
+// retrySources lists the sources with a load issue that the refresh skipped as
+// up to date, so each source is still downloaded at most once per run.
+func retrySources(srcs []locdata.Source, rs []locdata.Result, issues []locdata.LoadIssue) []locdata.Source {
+	var out []locdata.Source
+	for _, s := range srcs {
+		if !slices.ContainsFunc(issues, func(i locdata.LoadIssue) bool { return i.Source == s.Name }) {
+			continue
+		}
+		if slices.ContainsFunc(rs, func(r locdata.Result) bool { return r.Source == s.Name && r.Status == locdata.UpToDate }) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // refreshLine summarises a refresh, or returns "" when nothing was refreshed.
@@ -94,7 +125,7 @@ func warnLines(rs []locdata.Result, issues []locdata.LoadIssue, db *location.DB)
 		out = append(out, fmt.Sprintf("outflow: warning: could not refresh %s (%v); %s", r.Label, r.Err, using))
 	}
 	for _, i := range issues {
-		out = append(out, fmt.Sprintf("outflow: warning: cached %s could not be read (%v); using built-in sample data",
+		out = append(out, fmt.Sprintf("outflow: warning: cached %s could not be read (%v); using built-in sample data (run outflow update-data)",
 			location.SourceLabel(i.Source), i.Err))
 	}
 	return out
