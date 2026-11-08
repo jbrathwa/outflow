@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/fixtures"
@@ -424,5 +425,110 @@ func TestDoctorProfileFromSnapshot(t *testing.T) {
 	s.Profile = "generic" // e.g. --profile generic on an AKS cluster
 	if r := Run(s, db(t), demoCfg(t), true); r.Profile != "generic" {
 		t.Errorf("profile = %q", r.Profile)
+	}
+}
+
+func demoSnap(t *testing.T) model.Snapshot {
+	t.Helper()
+	s, err := fixtures.Demo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func locGroup(t *testing.T, r Result) []Check {
+	t.Helper()
+	for _, g := range r.Groups {
+		if g.Name == "Location" {
+			return g.Checks
+		}
+	}
+	t.Fatal("no Location group")
+	return nil
+}
+
+func TestDoctorLocationRowsSample(t *testing.T) {
+	rows := locGroup(t, Run(demoSnap(t), db(t), demoCfg(t), true))
+	if len(rows) != 5 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	for _, c := range rows {
+		if c.State != Warn || c.Detail != "built-in sample only" || c.Fix == "" || c.Without == "" {
+			t.Errorf("row = %+v", c)
+		}
+	}
+	if rows[0].Name != "Azure service tags" || rows[4].Name != "DB-IP country database" {
+		t.Errorf("names = %q .. %q", rows[0].Name, rows[4].Name)
+	}
+	for _, c := range rows[:4] {
+		if c.Without != "most destinations in these ranges show as unknown" {
+			t.Errorf("%s without = %q", c.Name, c.Without)
+		}
+	}
+	if w := rows[4].Without; w != "destinations outside cloud ranges have no country" {
+		t.Errorf("geo without = %q", w)
+	}
+}
+
+func partsDB(t *testing.T, azureAge int, geoAge int, geoStale bool) *location.DB {
+	t.Helper()
+	d, err := location.Build([]location.Part{
+		{Info: location.SourceInfo{Name: "azure", Version: "20261102", AgeDays: azureAge}, FS: fstest.MapFS{}},
+		{Info: location.SourceInfo{Name: "geo", Version: "202610", AgeDays: geoAge, Stale: geoStale}, FS: fstest.MapFS{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestDoctorLocationRowsFreshAndStale(t *testing.T) {
+	rows := locGroup(t, Run(demoSnap(t), partsDB(t, 6, 40, true), demoCfg(t), true))
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if c := rows[0]; c.State != OK || c.Detail != "20261102 · 6 days old" || c.Why != "" || c.Fix != "" {
+		t.Errorf("fresh = %+v", c)
+	}
+	c := rows[1]
+	if c.State != Warn || c.Detail != "202610 · 40 days old" || c.Why != "older than 30 days" ||
+		c.Fix != "run a live scan or outflow update-data" {
+		t.Errorf("stale = %+v", c)
+	}
+}
+
+func TestDoctorLocationNotLoaded(t *testing.T) {
+	rows := locGroup(t, Run(demoSnap(t), nil, demoCfg(t), true))
+	if len(rows) != 1 || rows[0].Name != "Location data" || rows[0].State != Fail || rows[0].Detail != "not loaded" {
+		t.Errorf("rows = %+v", rows)
+	}
+}
+
+func TestLocationRowsDoNotChangeCoverage(t *testing.T) {
+	s := demoSnap(t)
+	sample := Run(s, db(t), demoCfg(t), true)
+	fresh := Run(s, partsDB(t, 1, 1, false), demoCfg(t), true)
+	if sample.Coverage.Level != fresh.Coverage.Level {
+		t.Errorf("sample %s vs fresh %s", sample.Coverage.Level, fresh.Coverage.Level)
+	}
+}
+
+func TestPrintStaleLocationRows(t *testing.T) {
+	d, err := location.Build([]location.Part{
+		{Info: location.SourceInfo{Name: "azure", Version: "20261030", AgeDays: 9, Stale: true}, FS: fstest.MapFS{}},
+		{Info: location.SourceInfo{Name: "geo", Version: "202610", AgeDays: 40, Stale: true}, FS: fstest.MapFS{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	Print(&buf, Run(demoSnap(t), d, demoCfg(t), true), false)
+	out := buf.String()
+	for _, want := range []string{"20261030 · 9 days old", "older than 7 days", "older than 30 days",
+		"fix: run a live scan or outflow update-data"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 }

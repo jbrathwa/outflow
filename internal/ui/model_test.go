@@ -165,6 +165,37 @@ func TestCoverageHint(t *testing.T) {
 	}
 }
 
+func TestLocationDataHint(t *testing.T) {
+	rep := demoReport(t, true)
+	fresh := func() []location.SourceInfo {
+		var out []location.SourceInfo
+		for _, n := range location.SourceNames {
+			out = append(out, location.SourceInfo{Name: n, Version: "v", AgeDays: 1})
+		}
+		return out
+	}
+	rep.LocationSources = fresh()
+	if v := sized(New(rep, nil), 140, 40).View(); strings.Contains(v, "location data") {
+		t.Errorf("fresh data should show no hint:\n%s", v)
+	}
+	rep.LocationSources = fresh()
+	rep.LocationSources[0].AgeDays, rep.LocationSources[0].Stale = 9, true
+	rep.LocationSources[4] = location.SourceInfo{Name: "geo", Version: "seed", Sample: true}
+	m := sized(New(rep, nil).WithCoverage(doctor.Partial), 140, 40)
+	lines := strings.Split(m.View(), "\n")
+	cov, loc := lineIndex(lines, "coverage partial"), lineIndex(lines, "location data: azure 9 days old · geo sample")
+	if loc < 0 || loc != cov+1 {
+		t.Errorf("hint at line %d, coverage at %d:\n%s", loc, cov, m.View())
+	}
+	if len(lines) > 40 {
+		t.Errorf("%d lines", len(lines))
+	}
+	empty := analyze.Report{Workloads: []analyze.WorkloadResult{}, LocationSources: rep.LocationSources}
+	if v := sized(New(empty, nil), 100, 30).View(); !strings.Contains(v, "location data: azure 9 days old · geo sample") {
+		t.Errorf("empty view should keep the location hint:\n%s", v)
+	}
+}
+
 func TestDetailNotes(t *testing.T) {
 	rep := demoReport(t, true)
 	var all strings.Builder

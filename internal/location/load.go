@@ -3,53 +3,114 @@ package location
 import (
 	"embed"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/netip"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 )
 
-//go:embed data/*
+//go:embed data
 var embeddedData embed.FS
 
-// Embedded loads the seed data compiled into the binary.
-func Embedded() (*DB, error) {
-	sub, err := fs.Sub(embeddedData, "data")
-	if err != nil {
-		return nil, err
+// Part is one source's data: any of cloud.csv, cdn.csv and geo.csv in FS.
+// Files that are missing are skipped.
+type Part struct {
+	Info SourceInfo
+	FS   fs.FS
+}
+
+// SampleFS returns the built-in sample data for a source.
+func SampleFS(source string) (fs.FS, bool) {
+	if !slices.Contains(SourceNames, source) {
+		return nil, false
 	}
-	return load(sub)
+	sub, err := fs.Sub(embeddedData, "data/"+source)
+	if err != nil {
+		return nil, false
+	}
+	return sub, true
+}
+
+// SampleVersion returns the version of the built-in sample data.
+func SampleVersion() string {
+	v, err := embeddedData.ReadFile("data/VERSION")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(v))
+}
+
+// Embedded loads the sample data compiled into the binary.
+func Embedded() (*DB, error) {
+	parts := make([]Part, 0, len(SourceNames))
+	for _, name := range SourceNames {
+		sub, ok := SampleFS(name)
+		if !ok {
+			return nil, fmt.Errorf("%s: no embedded data", name)
+		}
+		parts = append(parts, Part{
+			Info: SourceInfo{Name: name, Version: SampleVersion(), Sample: true},
+			FS:   sub,
+		})
+	}
+	return Build(parts)
 }
 
 // LoadDir loads cloud.csv, cdn.csv, geo.csv and VERSION from dir.
 func LoadDir(dir string) (*DB, error) {
-	return load(os.DirFS(dir))
-}
-
-func load(fsys fs.FS) (*DB, error) {
+	fsys := os.DirFS(dir)
 	db := &DB{}
-	if err := readCSV(fsys, "cloud.csv", 5, db.addCloud); err != nil {
-		return nil, err
-	}
-	if err := readCSV(fsys, "cdn.csv", 2, db.addCDN); err != nil {
-		return nil, err
-	}
-	if err := readCSV(fsys, "geo.csv", 3, db.addGeo); err != nil {
-		return nil, err
+	for _, f := range csvFiles {
+		if err := readCSV(fsys, f.name, f.fields, f.add(db)); err != nil {
+			return nil, err
+		}
 	}
 	v, err := fs.ReadFile(fsys, "VERSION")
 	if err != nil {
 		return nil, fmt.Errorf("VERSION: %w", err)
 	}
 	db.version = strings.TrimSpace(string(v))
+	db.finish()
+	return db, nil
+}
+
+// Build merges the parts into one database. Missing files are skipped; errors
+// name the part and file they came from.
+func Build(parts []Part) (*DB, error) {
+	db := &DB{}
+	for _, p := range parts {
+		for _, f := range csvFiles {
+			err := readCSV(p.FS, f.name, f.fields, f.add(db))
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("%s: %w", p.Info.Name, err)
+			}
+		}
+		db.sources = append(db.sources, p.Info)
+	}
+	db.finish()
+	return db, nil
+}
+
+var csvFiles = []struct {
+	name   string
+	fields int
+	add    func(*DB) func([]string) error
+}{
+	{"cloud.csv", 5, func(db *DB) func([]string) error { return db.addCloud }},
+	{"cdn.csv", 2, func(db *DB) func([]string) error { return db.addCDN }},
+	{"geo.csv", 3, func(db *DB) func([]string) error { return db.addGeo }},
+}
+
+func (db *DB) finish() {
 	db.cdn.finish()
 	db.cloud.finish()
 	sort.Slice(db.geo, func(i, j int) bool { return db.geo[i].start.Less(db.geo[j].start) })
-	return db, nil
 }
 
 // readCSV skips the header row and calls add for each record.

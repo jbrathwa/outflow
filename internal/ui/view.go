@@ -12,7 +12,7 @@ import (
 
 // geometry is the computed screen layout.
 type geometry struct {
-	header           int // header lines incl. coverage hint
+	header           int // header lines incl. coverage and location hints
 	bodyH            int
 	side             bool
 	tableW, tableH   int // tableH counts the column header line
@@ -23,9 +23,7 @@ type geometry struct {
 
 func (m Model) geom() geometry {
 	g := geometry{header: 1, footer: 1, side: m.width >= sideBySideMin}
-	if m.coverageHint() != "" {
-		g.header++
-	}
+	g.header += len(m.hints())
 	if m.statusLine() != "" {
 		g.header++
 	}
@@ -81,12 +79,13 @@ func (m Model) View() string {
 		return ""
 	}
 	if len(m.report.Workloads) == 0 {
-		hint, h := m.coverageHint(), m.height
+		hints := m.hints()
 		msg := m.styles.Empty.Render("No workloads in snapshot")
-		if hint == "" {
-			return lipgloss.Place(m.width, h, lipgloss.Center, lipgloss.Center, msg)
+		if len(hints) == 0 {
+			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, msg)
 		}
-		return hint + "\n" + lipgloss.Place(m.width, max(h-1, 1), lipgloss.Center, lipgloss.Center, msg)
+		return strings.Join(hints, "\n") + "\n" +
+			lipgloss.Place(m.width, max(m.height-len(hints), 1), lipgloss.Center, lipgloss.Center, msg)
 	}
 	g := m.geom()
 	var body string
@@ -174,6 +173,35 @@ func (m Model) coverageHint() string {
 	return " " + m.styles.Warn.Render(fit(t, max(m.width-1, 0), false))
 }
 
+// locationHint is the location data warning line, or "" when every source is fresh.
+func (m Model) locationHint() string {
+	var parts []string
+	for _, s := range m.report.LocationSources {
+		switch {
+		case s.Sample:
+			parts = append(parts, s.Name+" sample")
+		case s.Stale:
+			parts = append(parts, fmt.Sprintf("%s %d days old", s.Name, s.AgeDays))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	t := "location data: " + strings.Join(parts, " · ")
+	return " " + m.styles.Warn.Render(fit(t, max(m.width-1, 0), false))
+}
+
+// hints are the header lines under the title: coverage, then location data.
+func (m Model) hints() []string {
+	var out []string
+	for _, h := range []string{m.coverageHint(), m.locationHint()} {
+		if h != "" {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 // statusLine is the refresh progress or failure line, or "" when idle.
 func (m Model) statusLine() string {
 	var t string
@@ -233,7 +261,7 @@ func (m Model) headerView() string {
 	if lipgloss.Width(line) > m.width {
 		line = fit(line, m.width, false)
 	}
-	if h := m.coverageHint(); h != "" {
+	for _, h := range m.hints() {
 		line += "\n" + h
 	}
 	if s := m.statusLine(); s != "" {

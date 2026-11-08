@@ -44,6 +44,7 @@ Usage:
   outflow doctor [flags]     check data sources and coverage
   outflow snapshot -o <file> [flags]
                              collect a snapshot JSON file (- for stdout, mode 0600)
+  outflow update-data        download fresh location data now (public files only)
   outflow version
 
 Without --demo or --snapshot, outflow reads the cluster in the current kubeconfig
@@ -64,6 +65,7 @@ Common flags:
   --join-window <duration>
                          how long after a DNS lookup a firewall event still counts,
                          1m..60m (default 5m)
+  --no-refresh           don't download location data before a live scan
   --debug                print query diagnostics to stderr (no log data)
 
 Scan flags:
@@ -82,6 +84,7 @@ type common struct {
 	snapshot, config                              string
 	context, profile, since, workspace            string
 	joinWindow                                    string
+	noRefresh                                     bool
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -97,6 +100,7 @@ func (c *common) register(fs *flag.FlagSet) {
 	fs.StringVar(&c.workspace, "workspace", "", "")
 	fs.StringVar(&c.joinWindow, "join-window", "5m", "")
 	fs.BoolVar(&c.debug, "debug", false, "")
+	fs.BoolVar(&c.noRefresh, "no-refresh", false, "")
 }
 
 // isLive reports whether no offline source (--demo, --demo-degraded, --snapshot) was given.
@@ -115,6 +119,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	case "help":
 		fmt.Fprint(stdout, usage)
 		return exitOK
+	case "update-data":
+		return updateData(args, stdout, stderr)
 	case "", "scan", "doctor", "snapshot":
 	default:
 		fmt.Fprintf(stderr, "outflow: unknown command %q\n\n%s", cmd, usage)
@@ -199,9 +205,17 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	if err != nil {
 		return fail(err)
 	}
-	db, err := location.Embedded()
-	if err != nil {
-		return fail(fmt.Errorf("location data: %w", err))
+	var db *location.DB
+	loadDB := func(ctx context.Context) bool {
+		if cmd == "snapshot" { // writes raw data only; never needs the database
+			return true
+		}
+		var err error
+		db, err = loadLocation(ctx, stderr, &c, cmd)
+		if err != nil {
+			fail(fmt.Errorf("location data: %w", err))
+		}
+		return err == nil
 	}
 	cfgFound := cfg.Residency != nil
 
@@ -219,10 +233,17 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		if err != nil {
 			return fail(err)
 		}
+		// Refresh only after setup succeeded, and before any collection output.
+		if !loadDB(ctx) {
+			return exitError
+		}
 		collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Collect(ctx, l.opt) }
 		if cmd == "doctor" {
 			collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Probe(ctx, l.opt) }
 		}
+	}
+	if !c.isLive() && !loadDB(ctx) {
+		return exitError
 	}
 	snap, err = collectSnap(ctx)
 	if err != nil {

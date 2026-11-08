@@ -410,3 +410,22 @@ func TestBuildRowKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestReportLocationSources(t *testing.T) {
+	db, err := location.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := Build(model.Snapshot{SchemaVersion: model.SchemaVersion}, db, config.Config{})
+	if len(rep.LocationSources) != 5 {
+		t.Fatalf("sources = %d, want 5", len(rep.LocationSources))
+	}
+	for _, s := range rep.LocationSources {
+		if !s.Sample {
+			t.Errorf("%s is not sample", s.Name)
+		}
+	}
+	if rep.LocationData != "seed-2026-11-07" {
+		t.Errorf("LocationData = %q", rep.LocationData)
+	}
+}

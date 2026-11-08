@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/jbrathwa/outflow/internal/analyze"
+	"github.com/jbrathwa/outflow/internal/collect"
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/location"
@@ -51,6 +53,9 @@ func scan(stdout, stderr io.Writer, snap model.Snapshot, db *location.DB, cfg co
 	}
 	report := analyze.BuildWith(snap, db, cfg, opt)
 	cov := doctor.Run(snap, db, cfg, cfgFound).Coverage
+	if un := unmappedRegions(report); len(un) > 0 {
+		collect.Debugf("unmapped cloud regions: %s", strings.Join(un, ", "))
+	}
 
 	// Validate the gate before printing anything: a bad gate must not look like a pass.
 	if failOn != "" {

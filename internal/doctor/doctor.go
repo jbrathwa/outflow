@@ -202,21 +202,7 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 			Without: dnsWithout, Required: snat})
 	}
 
-	var loc []Check
-	switch {
-	case db == nil:
-		loc = append(loc, Check{Name: "Cloud IP ranges", State: Fail, Detail: "not loaded"},
-			Check{Name: "GeoIP database", State: Warn, Detail: "not loaded"})
-	default:
-		loc = append(loc, Check{Name: "Cloud IP ranges", State: OK, Detail: db.Version()})
-		if db.HasGeoIP() {
-			loc = append(loc, Check{Name: "GeoIP database", State: OK, Detail: "country ranges loaded"})
-		} else {
-			loc = append(loc, Check{Name: "GeoIP database", State: Warn, Detail: "no country ranges",
-				Without: "destinations outside known cloud ranges have no country",
-				Fix:     "update the location data (outflow update-data)"})
-		}
-	}
+	loc := locationChecks(db)
 
 	res := Check{Name: "Rule", State: Info, Detail: "not configured"}
 	if cfgFound && cfg.Residency != nil {
@@ -252,6 +238,50 @@ func Run(s model.Snapshot, db *location.DB, cfg config.Config, cfgFound bool) Re
 	}
 	r.Coverage = coverage(traffic, available(fw.State), dnsAvail, localDNS)
 	return r
+}
+
+// maxAgeDays is how old each location source may get before it is stale.
+// It mirrors the refresh rule in internal/locdata, which doctor must not import.
+func maxAgeDays(source string) int {
+	if source == "geo" {
+		return 30
+	}
+	return 7
+}
+
+// locationChecks builds the Location group: one row per data source.
+func locationChecks(db *location.DB) []Check {
+	if db == nil {
+		return []Check{{Name: "Location data", State: Fail, Detail: "not loaded"}}
+	}
+	const fix = "run a live scan or outflow update-data"
+	var out []Check
+	for _, info := range db.Sources() {
+		ck := Check{Name: location.SourceLabel(info.Name), State: OK,
+			Detail: fmt.Sprintf("%s · %s old", info.Version, plural(info.AgeDays, "day"))}
+		switch {
+		case info.Sample:
+			ck.State, ck.Detail = Warn, "built-in sample only"
+			ck.Without = "most destinations in these ranges show as unknown"
+			if info.Name == "geo" {
+				ck.Without = "destinations outside cloud ranges have no country"
+			}
+			ck.Fix = fix
+		case info.Stale:
+			ck.State = Warn
+			ck.Why = fmt.Sprintf("older than %d days", maxAgeDays(info.Name))
+			ck.Fix = fix
+		}
+		out = append(out, ck)
+	}
+	return out
+}
+
+func plural(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 // accessChecks builds the Access group: one check per live access source,

@@ -125,8 +125,21 @@ Traffic
   ✔ Pod inventory           KubePodInventory in law-hub-eus
 
 Location
-  ✔ Cloud IP ranges         seed-2026-11-07
-  ✔ GeoIP database          country ranges loaded
+  ! Azure service tags      built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! AWS IP ranges           built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! GCP IP ranges           built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! CDN ranges              built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: most destinations in these ranges show as unknown
+  ! DB-IP country database  built-in sample only
+    fix: run a live scan or outflow update-data
+    without it: destinations outside cloud ranges have no country
 
 Residency
   · Rule                    not configured
@@ -139,8 +152,10 @@ Coverage  PARTIAL
   cannot: which workload made each call → enable CoreDNS logs
 ```
 
-On a healthy cluster (`outflow doctor --demo`) every traffic check is green and
-the verdict is `Coverage  FULL`.
+The demo uses only the built-in sample location data, so each source warns. On a live
+cluster these rows show each source's date and age. On a healthy cluster
+(`outflow doctor --demo`) every traffic check is green and the verdict is
+`Coverage  FULL`.
 
 ## Recording the GIFs
 
