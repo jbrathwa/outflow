@@ -318,6 +318,7 @@ listed under [Permissions](#permissions).
 `outflow doctor` shows one row per source in its Location group, with the data's date and
 age, for example `20261102 · 6 days old`. A row warns when the source is older than its
 limit or when only the built-in sample is available. This does not change the coverage
-verdict.
+verdict. The interactive view shows the same warnings in one line under its header, for
+example `location data: azure 9 days old · geo sample`, and nothing when all data is fresh.
 
 IP to Country Lite data by DB-IP (https://db-ip.com), licensed under CC BY 4.0.
