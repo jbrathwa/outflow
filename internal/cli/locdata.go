@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -59,7 +60,8 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 	if err != nil {
 		return nil, err
 	}
-	if again := retrySources(srcs, results, issues); refresh && len(again) > 0 {
+	interrupted := func() bool { return errors.Is(ctx.Err(), context.Canceled) }
+	if again := retrySources(srcs, results, issues); refresh && !interrupted() && len(again) > 0 {
 		downloadingLine(stderr, again)
 		for _, r := range locdata.Refresh(rctx, cache, hc, again, true) {
 			for i := range results {
@@ -74,6 +76,9 @@ func loadLocation(ctx context.Context, stderr io.Writer, c *common, cmd string) 
 	}
 	if l := refreshLine(results); l != "" {
 		fmt.Fprintln(stderr, l)
+	}
+	if interrupted() { // Ctrl-C: the caller reports the cancellation
+		return db, nil
 	}
 	for _, w := range warnLines(results, issues, db) {
 		fmt.Fprintln(stderr, w)

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -481,5 +482,18 @@ func TestSnapshotSkipsLocationData(t *testing.T) {
 	}
 	if strings.Contains(stderr, "location data") || strings.Contains(stderr, "could not be read") {
 		t.Errorf("snapshot loaded location data: %q", stderr)
+	}
+}
+
+func TestInterruptedRefreshDoesNotWarn(t *testing.T) {
+	withLocData(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var stderr bytes.Buffer
+	if _, err := loadLocation(ctx, &stderr, &common{}, "scan"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr.String(), "warning") {
+		t.Errorf("stderr = %q", stderr.String())
 	}
 }
