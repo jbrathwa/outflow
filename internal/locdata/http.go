@@ -7,6 +7,9 @@ import (
 	"net/http"
 )
 
+// UserAgent is sent with every request; the CLI sets "outflow/" + Version.
+var UserAgent = "outflow"
+
 // maxBody caps every downloaded body.
 const maxBody = 64 << 20
 
@@ -25,6 +28,7 @@ func httpOpen(ctx context.Context, hc *http.Client, url string) (io.ReadCloser, 
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", UserAgent)
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
