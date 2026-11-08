@@ -133,7 +133,7 @@ func TestWarnLines(t *testing.T) {
 	got := warnLines(failed, []locdata.LoadIssue{{Source: "cdn", Err: errors.New("bad csv")}}, db)
 	want := []string{
 		"outflow: warning: could not refresh Azure service tags (HTTP 500 from example.test); using data from " +
-			now.Add(-9*24*time.Hour).Format("2006-01-02") + " (9 days old)",
+			now.Add(-9*24*time.Hour).UTC().Format("2006-01-02") + " (9 days old)",
 		"outflow: warning: could not refresh AWS IP ranges (timeout); using built-in sample data",
 		"outflow: warning: cached CDN ranges could not be read (bad csv); using built-in sample data",
 	}
@@ -299,5 +299,18 @@ func TestLiveScanRefreshFails(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "using built-in sample data") || !strings.Contains(stdout, "shop/storefront") {
 		t.Errorf("stderr=%q stdout=%q", stderr, stdout)
+	}
+}
+
+func TestLiveSetupErrorDoesNotDownload(t *testing.T) {
+	e := withLocData(t)
+	le := withLive(t, aksState("AKS"), false)
+	le.clusterErr = errors.New("load kubeconfig: nope")
+	code, _, stderr := run(t, "scan")
+	if code != 1 || stderr != "outflow: load kubeconfig: nope\n" {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+	if e.hits.Load() != 0 {
+		t.Errorf("requests = %d", e.hits.Load())
 	}
 }

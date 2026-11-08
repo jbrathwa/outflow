@@ -17,7 +17,8 @@ shows the result in a TUI or prints it.
 
 Without `--demo` or `--snapshot`, a command reads the cluster in the current
 kubeconfig context. Live collection is read-only. The only files outflow writes are the
-one named by `snapshot -o` and the location data cache (see [Location data](#location-data)).
+one named by `snapshot -o` and the location data cache (see
+[Location data](#location-data)).
 
 ## Flags
 
@@ -82,7 +83,9 @@ For Azure: **Log Analytics Reader** on each workspace and **Reader** on the AKS 
 Commands to grant them are in [the setup guide](setup.md#roles).
 
 **Location data refresh.** Before a live scan outflow downloads public location data. This
-needs no Azure or Kubernetes access, only outbound HTTPS GETs to `www.microsoft.com`, `download.microsoft.com`, `ip-ranges.amazonaws.com`, `www.gstatic.com`, `www.cloudflare.com`, `api.fastly.com` and `download.db-ip.com`.
+needs no Azure or Kubernetes access, only outbound HTTPS GETs to `www.microsoft.com`,
+`download.microsoft.com`, `ip-ranges.amazonaws.com`, `www.gstatic.com`,
+`www.cloudflare.com`, `api.fastly.com` and `download.db-ip.com`.
 It sends no cluster data, IPs or credentials. If a feature ever uses Azure access for
 location data, it is listed here.
 

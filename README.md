@@ -139,9 +139,9 @@ cluster with CoreDNS query logging switched off:
 
 ## Location data
 
-A live scan downloads fresh public cloud, CDN and country ranges first (public files only,
-no Azure or Kubernetes access); the built-in seed subset is only a fallback and the demo
-data. Use `--no-refresh` to skip the download, or `outflow update-data` to fetch now; see the
+A live scan refreshes stale or missing public cloud, CDN and country ranges first (public
+files only, no Azure or Kubernetes access); the built-in seed subset is the fallback and the
+demo data. Use `--no-refresh` to skip it, or `outflow update-data` to fetch now; see the
 [usage guide](docs/usage.md#location-data).
 
 IP to Country Lite data by DB-IP (https://db-ip.com), licensed under CC BY 4.0.

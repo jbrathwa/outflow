@@ -18,6 +18,7 @@ import (
 	"github.com/jbrathwa/outflow/internal/config"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/fixtures"
+	"github.com/jbrathwa/outflow/internal/location"
 	"github.com/jbrathwa/outflow/internal/model"
 )
 
@@ -204,9 +205,14 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 	if err != nil {
 		return fail(err)
 	}
-	db, err := loadLocation(context.Background(), stderr, &c, cmd)
-	if err != nil {
-		return fail(fmt.Errorf("location data: %w", err))
+	var db *location.DB
+	loadDB := func(ctx context.Context) bool {
+		var err error
+		db, err = loadLocation(ctx, stderr, &c, cmd)
+		if err != nil {
+			fail(fmt.Errorf("location data: %w", err))
+		}
+		return err == nil
 	}
 	cfgFound := cfg.Residency != nil
 
@@ -224,10 +230,17 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, tui TUIFunc) 
 		if err != nil {
 			return fail(err)
 		}
+		// Refresh only after setup succeeded, and before any collection output.
+		if !loadDB(ctx) {
+			return exitError
+		}
 		collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Collect(ctx, l.opt) }
 		if cmd == "doctor" {
 			collectSnap = func(ctx context.Context) (model.Snapshot, error) { return l.col.Probe(ctx, l.opt) }
 		}
+	}
+	if !c.isLive() && !loadDB(ctx) {
+		return exitError
 	}
 	snap, err = collectSnap(ctx)
 	if err != nil {

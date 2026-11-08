@@ -88,7 +88,7 @@ func warnLines(rs []locdata.Result, issues []locdata.LoadIssue, db *location.DB)
 		using := "using built-in sample data"
 		for _, s := range db.Sources() {
 			if s.Name == r.Source && !s.Sample {
-				using = fmt.Sprintf("using data from %s (%d days old)", s.Fetched.Format("2006-01-02"), s.AgeDays)
+				using = fmt.Sprintf("using data from %s (%d days old)", s.Fetched.UTC().Format("2006-01-02"), s.AgeDays)
 			}
 		}
 		out = append(out, fmt.Sprintf("outflow: warning: could not refresh %s (%v); %s", r.Label, r.Err, using))
