@@ -4,6 +4,10 @@ Cluster **aks-prod-eus** · rule: allow US · window 2026-11-06T09:00:00Z → 20
 
 Coverage: FULL
 
+Location data: azure sample · aws sample · gcp sample · cdn sample · geo sample
+
+> Location data may be out of date: azure is built-in sample data; aws is built-in sample data; gcp is built-in sample data; cdn is built-in sample data; geo is built-in sample data.
+
 | Status | Workload | Destination | Location | Evidence | Action |
 |---|---|---|---|---|---|
 | outside | payments/ledger-worker | stledgerweu.blob.core.windows.net (20.60.40.4):443 | NL (azure:westeurope) | confirmed | allow |

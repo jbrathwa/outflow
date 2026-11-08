@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbrathwa/outflow/internal/analyze"
 	"github.com/jbrathwa/outflow/internal/doctor"
 	"github.com/jbrathwa/outflow/internal/fixtures"
+	"github.com/jbrathwa/outflow/internal/location"
+	"github.com/jbrathwa/outflow/internal/locdata"
 	"github.com/jbrathwa/outflow/internal/model"
 )
 
@@ -399,5 +402,86 @@ func TestNoColorNeedsValue(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	if !noColor() {
 		t.Error("NO_COLOR=1 must disable colour")
+	}
+}
+
+func TestMarkdownLocationDataLine(t *testing.T) {
+	fresh := []location.SourceInfo{
+		{Name: "azure", Version: "20261102"}, {Name: "aws", Version: "2026-11-01"}, {Name: "geo", Version: "2026-11"},
+	}
+	var b bytes.Buffer
+	rep := analyze.Report{LocationSources: fresh}
+	if err := WriteMarkdown(&b, rep, doctor.Coverage{Level: doctor.Full}); err != nil {
+		t.Fatal(err)
+	}
+	want := "Coverage: FULL\n\nLocation data: azure 20261102 · aws 2026-11-01 · geo 2026-11\n\n"
+	if !strings.Contains(b.String(), want) {
+		t.Errorf("fresh:\n%s", b.String())
+	}
+	if strings.Contains(b.String(), "out of date") {
+		t.Errorf("unexpected warning:\n%s", b.String())
+	}
+
+	stale := []location.SourceInfo{
+		{Name: "azure", Version: "20261102", AgeDays: 9, Stale: true},
+		{Name: "aws", Version: "2026-11-01"},
+		{Name: "geo", Version: "seed", Sample: true},
+	}
+	b.Reset()
+	rep.LocationSources = stale
+	if err := WriteMarkdown(&b, rep, doctor.Coverage{Level: doctor.Full}); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{
+		"Location data: azure 20261102 · aws 2026-11-01 · geo sample\n\n",
+		"> Location data may be out of date: azure is 9 days old; geo is built-in sample data.\n\n",
+	} {
+		if !strings.Contains(b.String(), w) {
+			t.Errorf("missing %q in:\n%s", w, b.String())
+		}
+	}
+}
+
+func TestJSONHasLocationSources(t *testing.T) {
+	code, stdout, _ := run(t, "scan", "--demo")
+	if code != 0 {
+		t.Fatalf("code=%d", code)
+	}
+	var m struct {
+		LocationSources []map[string]any `json:"locationSources"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.LocationSources) != 5 {
+		t.Errorf("locationSources = %d entries", len(m.LocationSources))
+	}
+}
+
+func TestDebugUnmappedRegions(t *testing.T) {
+	e := withLocData(t)
+	c := locdata.Cache{Dir: e.dir}
+	err := c.Save("azure", locdata.Dataset{Version: "20261102", Files: map[string][]byte{
+		"cloud.csv": []byte("prefix,provider,region,service,global\n192.0.2.0/24,azure,newregion9,Storage,false\n"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	snap := model.Snapshot{
+		SchemaVersion: model.SchemaVersion,
+		Window:        model.Window{Start: now.Add(-time.Hour), End: now},
+		Nodes:         []model.Node{{Name: "n1", IPs: []string{"10.0.0.4"}}},
+		EgressEvents: []model.EgressEvent{{NodeIP: "10.0.0.4", DestIP: "192.0.2.5", Protocol: "tcp", Port: 443,
+			Action: "allow", Bin: now.Add(-time.Minute), Count: 1}},
+	}
+	p := snapshotFile(t, snap)
+	code, _, stderr := run(t, "scan", "--snapshot", p, "--debug")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr)
+	}
+	want := "debug: unmapped cloud regions: azure/newregion9 (1 destinations)"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr lacks %q:\n%s", want, stderr)
 	}
 }

@@ -63,15 +63,17 @@ type Counts struct {
 
 // Report is the analyzed snapshot consumed by the TUI, scan output and exit codes.
 type Report struct {
-	SchemaVersion  int              `json:"schemaVersion"`
-	Cluster        model.Cluster    `json:"cluster"`
-	Window         model.Window     `json:"window"`
-	RuleConfigured bool             `json:"ruleConfigured"`
-	Rule           string           `json:"rule"`
-	LocationData   string           `json:"locationData"`
-	JoinWindow     string           `json:"joinWindow"`
-	Counts         Counts           `json:"counts"`
-	Workloads      []WorkloadResult `json:"workloads"`
+	SchemaVersion  int           `json:"schemaVersion"`
+	Cluster        model.Cluster `json:"cluster"`
+	Window         model.Window  `json:"window"`
+	RuleConfigured bool          `json:"ruleConfigured"`
+	Rule           string        `json:"rule"`
+	LocationData   string        `json:"locationData"`
+	// LocationSources lists each location data source with its version and age.
+	LocationSources []location.SourceInfo `json:"locationSources"`
+	JoinWindow      string                `json:"joinWindow"`
+	Counts          Counts                `json:"counts"`
+	Workloads       []WorkloadResult      `json:"workloads"`
 }
 
 // Options tunes the analysis. A zero JoinWindow means DefaultJoinWindow.
@@ -92,14 +94,15 @@ func BuildWith(s model.Snapshot, db *location.DB, cfg config.Config, opt Options
 	}
 	r := cfg.Residency
 	rep := Report{
-		SchemaVersion:  ReportSchemaVersion,
-		Cluster:        s.Cluster,
-		Window:         s.Window,
-		RuleConfigured: r != nil,
-		Rule:           ruleString(r),
-		LocationData:   db.Version(),
-		JoinWindow:     opt.JoinWindow.String(),
-		Workloads:      []WorkloadResult{},
+		SchemaVersion:   ReportSchemaVersion,
+		Cluster:         s.Cluster,
+		Window:          s.Window,
+		RuleConfigured:  r != nil,
+		Rule:            ruleString(r),
+		LocationData:    db.Version(),
+		LocationSources: locationSources(db),
+		JoinWindow:      opt.JoinWindow.String(),
+		Workloads:       []WorkloadResult{},
 	}
 
 	private := netpol.DefaultPrivate(s.Cluster.PodCIDRs, s.Cluster.ServiceCIDRs)
@@ -356,4 +359,9 @@ func (d Destination) Name() string {
 		return d.Domain
 	}
 	return d.IP
+}
+
+// locationSources copies the database's sources; never nil, so JSON shows [].
+func locationSources(db *location.DB) []location.SourceInfo {
+	return append([]location.SourceInfo{}, db.Sources()...)
 }

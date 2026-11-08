@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ func WriteMarkdown(w io.Writer, r analyze.Report, cov doctor.Coverage) error {
 	fmt.Fprintf(&b, "Cluster **%s** · rule: %s · window %s → %s (UTC, RFC3339)\n\n",
 		r.Cluster.Name, rule, r.Window.Start.UTC().Format(time.RFC3339), r.Window.End.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "Coverage: %s\n\n", cov.Level)
+	writeLocationData(&b, r.LocationSources)
 
 	var rows []string
 	for _, wl := range r.Workloads {
@@ -120,4 +122,53 @@ func cell(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// writeLocationData writes the location data line and, when some source is
+// stale or built-in sample data, a warning line.
+func writeLocationData(b *strings.Builder, srcs []location.SourceInfo) {
+	if len(srcs) == 0 {
+		return
+	}
+	var names, warn []string
+	for _, s := range srcs {
+		if s.Sample {
+			names = append(names, s.Name+" sample")
+			warn = append(warn, s.Name+" is built-in sample data")
+			continue
+		}
+		names = append(names, s.Name+" "+s.Version)
+		if s.Stale {
+			warn = append(warn, fmt.Sprintf("%s is %d days old", s.Name, s.AgeDays))
+		}
+	}
+	fmt.Fprintf(b, "Location data: %s\n\n", strings.Join(names, " · "))
+	if len(warn) > 0 {
+		fmt.Fprintf(b, "> Location data may be out of date: %s.\n\n", strings.Join(warn, "; "))
+	}
+}
+
+// unmappedRegions lists cloud regions of destinations that have no country,
+// as sorted "provider/region (N destinations)".
+func unmappedRegions(r analyze.Report) []string {
+	counts := map[string]int{}
+	for _, wl := range r.Workloads {
+		for _, d := range wl.Destinations {
+			l := d.Location
+			if l.Provider == "" || l.Region == "" || l.Global || location.RegionCountry(l.Provider, l.Region) != "" {
+				continue
+			}
+			counts[l.Provider+"/"+l.Region]++
+		}
+	}
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		out[i] = fmt.Sprintf("%s (%d destinations)", k, counts[k])
+	}
+	return out
 }
