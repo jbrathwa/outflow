@@ -95,6 +95,12 @@ func TestSaveReplacesAndCleansUp(t *testing.T) {
 		if err := c.Save("azure", azureData(v)); err != nil {
 			t.Fatal(err)
 		}
+		// Only folders older than an hour are cleaned up.
+		old, _ := filepath.Glob(filepath.Join(c.Dir, "azure-*"))
+		past := time.Now().Add(-2 * time.Hour)
+		for _, d := range old {
+			_ = os.Chtimes(d, past, past)
+		}
 	}
 	dirs, _ := filepath.Glob(filepath.Join(c.Dir, "azure-*"))
 	if len(dirs) != 1 {
@@ -183,5 +189,32 @@ func TestMetaRejectsTraversalPointer(t *testing.T) {
 	_, issues, err := c.Load(testSources())
 	if err != nil || len(issues) != 1 || !strings.Contains(issues[0].Err.Error(), "invalid cache folder") {
 		t.Fatalf("err=%v issues=%v", err, issues)
+	}
+}
+
+func TestSaveCleanupSparesRecentFolders(t *testing.T) {
+	c := cacheAt(t, fetched)
+	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(c.Dir, "azure-inflight")
+	old := filepath.Join(c.Dir, "azure-old")
+	for _, d := range []string{fresh, old} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(old, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save("azure", azureData("v")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("fresh folder removed: %v", err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("old folder survived: %v", err)
 	}
 }

@@ -132,10 +132,14 @@ func (c Cache) Save(source string, d Dataset) error {
 	}
 	keep = true
 
-	// Best-effort cleanup of older folders.
+	// Best-effort cleanup of old folders. Recent ones may belong to a
+	// concurrent run that has not switched its pointer yet.
 	entries, _ := os.ReadDir(c.Dir)
 	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), source+"-") && e.Name() != meta.Dir {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), source+"-") || e.Name() == meta.Dir {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > time.Hour {
 			_ = os.RemoveAll(filepath.Join(c.Dir, e.Name()))
 		}
 	}
