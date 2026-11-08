@@ -154,19 +154,29 @@ func (db *DB) Lookup(ip netip.Addr) Location {
 		l := Location{Provider: c.provider, Region: c.region, Service: c.service, HowKnown: CloudRange}
 		if c.global {
 			l.Global = true
-		} else {
-			l.Country = RegionCountry(c.provider, c.region)
+		} else if l.Country = RegionCountry(c.provider, c.region); l.Country == "" {
+			if country, ok := db.geoCountry(ip); ok {
+				l.Country, l.HowKnown = country, GeoIP
+			}
 		}
 		return l
 	}
-	i := sort.Search(len(db.geo), func(i int) bool { return db.geo[i].start.Compare(ip) > 0 })
-	if i > 0 {
-		if g := db.geo[i-1]; g.end.Compare(ip) >= 0 {
-			return Location{Country: g.country, HowKnown: GeoIP}
-		}
+	if country, ok := db.geoCountry(ip); ok {
+		return Location{Country: country, HowKnown: GeoIP}
 	}
 	return Location{HowKnown: None}
 }
 
 // HasGeoIP reports whether the database holds any GeoIP country ranges.
 func (db *DB) HasGeoIP() bool { return len(db.geo) > 0 }
+
+// geoCountry finds the GeoIP country range holding ip.
+func (db *DB) geoCountry(ip netip.Addr) (string, bool) {
+	i := sort.Search(len(db.geo), func(i int) bool { return db.geo[i].start.Compare(ip) > 0 })
+	if i > 0 {
+		if g := db.geo[i-1]; g.end.Compare(ip) >= 0 {
+			return g.country, true
+		}
+	}
+	return "", false
+}
