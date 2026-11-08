@@ -11,24 +11,46 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/jbrathwa/outflow/internal/collect"
 )
 
 func convertCDN(cfV4, cfV6, fastly io.Reader, version string) (Dataset, error) {
 	var rows []cdnRow
-	add := func(s, name string) {
-		if p, err := netip.ParsePrefix(strings.TrimSpace(s)); err == nil {
-			rows = append(rows, cdnRow{p.Masked(), name})
+	// add parses one prefix and reports whether it was valid.
+	add := func(s, name string) bool {
+		p, err := netip.ParsePrefix(strings.TrimSpace(s))
+		if err != nil {
+			return false
 		}
+		rows = append(rows, cdnRow{p.Masked(), name})
+		return true
 	}
-	for _, r := range []io.Reader{cfV4, cfV6} {
-		sc := bufio.NewScanner(r)
+	for _, l := range []struct {
+		label string
+		r     io.Reader
+	}{{"Cloudflare IPv4", cfV4}, {"Cloudflare IPv6", cfV6}} {
+		n, skipped := 0, 0
+		sc := bufio.NewScanner(l.r)
 		for sc.Scan() {
-			if line := strings.TrimSpace(sc.Text()); line != "" {
-				add(line, "Cloudflare")
+			line := strings.TrimSpace(sc.Text())
+			if line == "" {
+				continue
+			}
+			if add(line, "Cloudflare") {
+				n++
+			} else {
+				skipped++
 			}
 		}
 		if err := sc.Err(); err != nil {
-			return Dataset{}, fmt.Errorf("read Cloudflare ranges: %w", err)
+			return Dataset{}, fmt.Errorf("read %s list: %w", l.label, err)
+		}
+		if n == 0 {
+			return Dataset{}, fmt.Errorf("%s list contains no prefixes", l.label)
+		}
+		if skipped > 0 {
+			collect.Debugf("%s list: skipped %d unparseable prefixes", l.label, skipped)
 		}
 	}
 	var f struct {
@@ -38,11 +60,14 @@ func convertCDN(cfV4, cfV6, fastly io.Reader, version string) (Dataset, error) {
 	if err := json.NewDecoder(fastly).Decode(&f); err != nil {
 		return Dataset{}, fmt.Errorf("decode Fastly public-ip-list: %w", err)
 	}
+	n := 0
 	for _, s := range append(f.Addresses, f.IPv6Addresses...) {
-		add(s, "Fastly")
+		if add(s, "Fastly") {
+			n++
+		}
 	}
-	if len(rows) == 0 {
-		return Dataset{}, errors.New("CDN range lists (Cloudflare, Fastly) contain no prefixes")
+	if n == 0 {
+		return Dataset{}, errors.New("Fastly list contains no prefixes")
 	}
 	return Dataset{Version: version, Files: map[string][]byte{"cdn.csv": cdnCSV(rows)}}, nil
 }

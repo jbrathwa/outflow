@@ -33,13 +33,20 @@ func TestConvertCDN(t *testing.T) {
 }
 
 func TestConvertCDNRejectsEmpty(t *testing.T) {
-	ds, err := convertCDN(strings.NewReader("\n"), strings.NewReader(""), strings.NewReader(`{"addresses":[],"ipv6_addresses":[]}`), "v")
-	if err == nil || ds.Files != nil {
-		t.Fatalf("got %v %v", ds, err)
+	cf4 := "192.0.2.0/24\n"
+	cf6 := "2001:db8:1::/48\n"
+	fastly := `{"addresses":["198.51.100.0/24"],"ipv6_addresses":[]}`
+	cases := []struct{ name, v4, v6, fastly, want string }{
+		{"html cloudflare v4", "<html>Denied</html>", cf6, fastly, "Cloudflare IPv4"},
+		{"empty cloudflare v6", cf4, "\n", fastly, "Cloudflare IPv6"},
+		{"empty fastly", cf4, cf6, `{"addresses":[],"ipv6_addresses":[]}`, "Fastly"},
+		{"html fastly", cf4, cf6, `<html>Denied</html>`, "Fastly"},
 	}
-	ds, err = convertCDN(strings.NewReader("x"), strings.NewReader("x"), strings.NewReader(`<html>Denied</html>`), "v")
-	if err == nil || ds.Files != nil || !strings.Contains(err.Error(), "Fastly") {
-		t.Fatalf("got %v %v", ds, err)
+	for _, c := range cases {
+		ds, err := convertCDN(strings.NewReader(c.v4), strings.NewReader(c.v6), strings.NewReader(c.fastly), "v")
+		if err == nil || ds.Files != nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s: got %v %v", c.name, ds, err)
+		}
 	}
 }
 
