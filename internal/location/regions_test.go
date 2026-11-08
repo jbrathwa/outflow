@@ -26,7 +26,6 @@ func TestRegionCountryComplete(t *testing.T) {
 		"gcp/asia-south1": "IN", "gcp/me-central1": "QA", "gcp/europe-north1": "FI", "gcp/asia-east1": "TW",
 		// Short aliases and newer regions seen in the real downloaded data.
 		"aws/eusc-de-east-1":      "DE",
-		"aws/me-west-1":           "IL",
 		"azure/austriaeast":       "AT",
 		"azure/brazilne":          "BR",
 		"azure/brazilse":          "BR",

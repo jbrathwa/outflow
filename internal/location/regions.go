@@ -143,7 +143,6 @@ var regionCountries = map[string]string{
 	"gcp/us-west3":                "US",
 	"gcp/us-west4":                "US",
 	"aws/eusc-de-east-1":          "DE",
-	"aws/me-west-1":               "IL",
 	"azure/austriaeast":           "AT",
 	"azure/brazilne":              "BR",
 	"azure/brazilse":              "BR",
