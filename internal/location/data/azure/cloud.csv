@@ -3,7 +3,3 @@ prefix,provider,region,service,global
 20.60.128.0/24,azure,eastus,Storage,false
 40.71.0.0/16,azure,eastus,AzureCloud,false
 20.190.128.0/18,azure,,AzureActiveDirectory,true
-52.208.0.0/13,aws,eu-west-1,,false
-54.144.0.0/14,aws,us-east-1,,false
-3.208.0.0/12,aws,us-east-1,,false
-142.250.0.0/15,gcp,,,true

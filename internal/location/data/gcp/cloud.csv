@@ -1,0 +1,2 @@
+prefix,provider,region,service,global
+142.250.0.0/15,gcp,,,true

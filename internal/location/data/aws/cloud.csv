@@ -1,0 +1,4 @@
+prefix,provider,region,service,global
+52.208.0.0/13,aws,eu-west-1,,false
+54.144.0.0/14,aws,us-east-1,,false
+3.208.0.0/12,aws,us-east-1,,false

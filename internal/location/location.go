@@ -4,6 +4,7 @@ package location
 import (
 	"net/netip"
 	"sort"
+	"strings"
 )
 
 // HowKnown says how a location was determined.
@@ -68,7 +69,8 @@ type geoRange struct {
 
 // DB holds the prefix tables used for lookups.
 type DB struct {
-	version string
+	version string // set by LoadDir; Build derives it from sources
+	sources []SourceInfo
 	cdn     prefixTable[string]
 	cloud   prefixTable[cloudEntry]
 	geo     []geoRange // sorted by start
@@ -118,8 +120,26 @@ func (t *prefixTable[T]) lookup(ip netip.Addr) (T, bool) {
 	return zero, false
 }
 
-// Version returns the data version string.
-func (db *DB) Version() string { return db.version }
+// Version returns the data version string. When every source is a sample, or
+// the database came from LoadDir, that is a single version; otherwise it lists
+// each source's version.
+func (db *DB) Version() string {
+	if db.version != "" || len(db.sources) == 0 {
+		return db.version
+	}
+	same := true
+	parts := make([]string, len(db.sources))
+	for i, s := range db.sources {
+		if !s.Sample {
+			same = false
+		}
+		parts[i] = s.Name + " " + s.Version
+	}
+	if same {
+		return db.sources[0].Version
+	}
+	return strings.Join(parts, ", ")
+}
 
 // Lookup resolves ip to a Location. Unknown addresses yield HowKnown None.
 func (db *DB) Lookup(ip netip.Addr) Location {
