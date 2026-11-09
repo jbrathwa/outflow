@@ -80,6 +80,8 @@ homebrew_casks:
       owner: jbrathwa
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    # Pre-release tags (v0.2.0-rc.1) don't touch the tap, so brew users stay on stable.
+    skip_upload: auto
     directory: Casks
     homepage: https://github.com/jbrathwa/outflow
     description: Find which Kubernetes workloads reach the internet and where that traffic goes
