@@ -24,7 +24,25 @@ The workflow runs vet and tests, then publishes:
 - release notes grouped from commit types (`feat`, `fix`, `docs`)
 - an updated `Casks/outflow.rb` in the tap, so `brew upgrade` picks it up
 
-Tags with a suffix such as `v0.2.0-rc.1` are marked as pre-releases.
+## Pre-releases
+
+Tags with a suffix such as `v0.2.0-rc.1` are marked as pre-releases. They get
+the same archives and checksums, but the Homebrew tap is not updated, and
+`releases/latest/download/` still points at the last stable release. Download
+a pre-release by its tag instead:
+
+```sh
+TAG=v0.2.0-rc.1
+curl -sSLO https://github.com/jbrathwa/outflow/releases/download/$TAG/outflow_Linux_x86_64.tar.gz
+curl -sSLO https://github.com/jbrathwa/outflow/releases/download/$TAG/checksums.txt
+shasum -a 256 --ignore-missing -c checksums.txt
+tar -xzf outflow_Linux_x86_64.tar.gz outflow
+./outflow version
+```
+
+Swap in `outflow_Darwin_arm64.tar.gz` (Apple silicon), `outflow_Darwin_x86_64.tar.gz`
+or `outflow_Windows_x86_64.zip` as needed. On macOS, run
+`xattr -d com.apple.quarantine outflow` before the first run.
 
 ## Try it locally first
 
